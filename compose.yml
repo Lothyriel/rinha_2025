@@ -1,0 +1,36 @@
+services:
+  api_0:
+    build:
+      context: https://github.com/Lothyriel/rinha_2025.git
+    networks:
+      - backend
+      - payment-processor
+
+  api_1:
+    build:
+      context: https://github.com/Lothyriel/rinha_2025.git
+    networks:
+      - backend
+      - payment-processor
+
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DATABASE}
+    networks:
+      - backend
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "9999:80"
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+  payment-processor:
+    external: true
