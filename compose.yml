@@ -4,23 +4,43 @@ services:
       context: https://github.com/Lothyriel/rinha_2025.git
     networks:
       - backend
-      - payment-processor
+    volumes:
+      - sqlite_data:/sqlite
+    command: ["api"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: "30MB"
 
   api_1:
     build:
       context: https://github.com/Lothyriel/rinha_2025.git
     networks:
       - backend
-      - payment-processor
+    volumes:
+      - sqlite_data:/sqlite
+    command: ["api"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: "30MB"
 
-  postgres:
-    image: postgres:latest
-    environment:
-      POSTGRES_USER: ${PG_USER}
-      POSTGRES_PASSWORD: ${PG_PASSWORD}
-      POSTGRES_DB: ${PG_DATABASE}
+  worker:
+    build:
+      context: https://github.com/Lothyriel/rinha_2025.git
     networks:
       - backend
+      - payment-processor
+    volumes:
+      - sqlite_data:/sqlite
+    command: ["worker"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.6"
+          memory: "240MB"
 
   nginx:
     image: nginx:latest
@@ -28,6 +48,14 @@ services:
       - "9999:80"
     networks:
       - backend
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: "50MB"
+
+volumes:
+  sqlite_data:
 
 networks:
   backend:
