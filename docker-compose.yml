@@ -6,7 +6,7 @@ services:
       - backend
     volumes:
       - sqlite_data:/sqlite
-    command: ["api"]
+    command: ["-m", "api", "-w", "worker:80"]
     depends_on:
       - worker
     deploy:
@@ -22,7 +22,7 @@ services:
       - backend
     volumes:
       - sqlite_data:/sqlite
-    command: ["api"]
+    command: ["-m", "api", "-w", "worker:80"]
     depends_on:
       - worker
     deploy:
@@ -38,7 +38,7 @@ services:
       - payment-processor
     volumes:
       - sqlite_data:/sqlite
-    command: ["worker"]
+    command: ["-m", "worker"]
     deploy:
       resources:
         limits:

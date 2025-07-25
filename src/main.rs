@@ -38,11 +38,11 @@ async fn serve(args: Args) -> Result<()> {
 }
 
 #[derive(Parser)]
-#[command(name = "rinha", about = "Rinha 2025 ")]
+#[command(about = "Rinha 2025")]
 struct Args {
-    #[arg(value_parser = ["api", "worker"])]
+    #[arg(short = 'm', value_parser = ["api", "worker"])]
     mode: String,
 
-    #[arg(required_if_eq("mode", "api"))]
+    #[arg(short = 'w', required_if_eq("mode", "api"))]
     worker_addr: Option<String>,
 }
