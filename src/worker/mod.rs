@@ -1,6 +1,6 @@
 use std::{
     future,
-    net::{IpAddr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr},
 };
 
 use anyhow::{Result, anyhow};
@@ -30,14 +30,17 @@ pub async fn client(addr: &str) -> Result<PaymentsClient> {
 }
 
 pub async fn serve() -> Result<()> {
-    let server_addr = (IpAddr::V6(Ipv6Addr::LOCALHOST), 80);
+    tracing::info!("Starting worker...");
+    let server_addr = (IpAddr::V4(Ipv4Addr::UNSPECIFIED), 80);
 
     let listener = tarpc::serde_transport::tcp::listen(&server_addr, Bincode::default).await?;
-    tracing::info!("RPC listening on port {}", listener.local_addr().port());
+    tracing::info!("RPC listening on {}", listener.local_addr());
 
+    let pool = get_db_pool(1);
+    init_db(&pool.get().expect("Should get connection from the pool"))?;
     let (tx, rx): (Sender, Receiver) = mpsc::unbounded_channel();
 
-    tokio::spawn(start_consumer(rx));
+    tokio::spawn(start_consumer(rx, pool));
 
     listener
         .filter_map(|r| future::ready(r.ok()))
@@ -52,9 +55,21 @@ pub async fn serve() -> Result<()> {
     Ok(())
 }
 
-async fn start_consumer(mut rx: Receiver) {
+fn init_db(conn: &Connection) -> Result<()> {
+    let sql = r#"CREATE TABLE IF NOT EXISTS payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    requested_at INTEGER NOT NULL,
+                    amount INTEGER NOT NULL,
+                    processor_id INTEGER NOT NULL
+                );"#;
+
+    conn.execute_batch(sql)?;
+
+    Ok(())
+}
+
+async fn start_consumer(mut rx: Receiver, pool: Pool<SqliteConnectionManager>) {
     let client = Client::new();
-    let pool = get_db_pool(1);
 
     while let Some(payment) = rx.recv().await {
         process(pool.clone(), &client, payment).await
@@ -105,6 +120,8 @@ const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
 ];
 
 async fn process_payment(client: &Client, payment: &Payment) -> u8 {
+    //todo: this needs to be handled way better
+    //todo: map and use the GET /payments/service-health
     for (id, uri) in PAYMENT_PROCESSORS {
         let result = send(uri, client, payment).await;
 
