@@ -1,12 +1,14 @@
 services:
   api_0:
     build:
-      context: https://github.com/Lothyriel/rinha_2025.git
+      context: .
     networks:
       - backend
     volumes:
       - sqlite_data:/sqlite
     command: ["api"]
+    depends_on:
+      - worker
     deploy:
       resources:
         limits:
@@ -15,21 +17,22 @@ services:
 
   api_1:
     build:
-      context: https://github.com/Lothyriel/rinha_2025.git
+      context: .
     networks:
       - backend
     volumes:
       - sqlite_data:/sqlite
     command: ["api"]
+    depends_on:
+      - worker
     deploy:
       resources:
         limits:
           cpus: "0.3"
           memory: "30MB"
-
   worker:
     build:
-      context: https://github.com/Lothyriel/rinha_2025.git
+      context: .
     networks:
       - backend
       - payment-processor
@@ -48,6 +51,11 @@ services:
       - "9999:80"
     networks:
       - backend
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api_0
+      - api_1
     deploy:
       resources:
         limits:
