@@ -12,6 +12,8 @@ use crate::{
 };
 
 pub async fn serve() -> Result<()> {
+    tracing::info!("Starting API...");
+
     let pool = get_db_pool(10);
 
     let client = worker::client("worker:80").await?;

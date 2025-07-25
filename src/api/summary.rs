@@ -5,6 +5,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 use rust_decimal::{Decimal, dec};
+use tokio::time::Instant;
 
 use crate::api::Data;
 
@@ -15,7 +16,12 @@ pub struct SummaryQuery {
 }
 
 pub async fn get(State(data): State<Data>, Query(query): Query<SummaryQuery>) -> Json<Summary> {
-    let conn = data.pool.get().unwrap();
+    let start = Instant::now();
+
+    let conn = data
+        .pool
+        .get()
+        .expect("Should get connection from the pool");
 
     let payments = get_payments(&conn, query).expect("Failed to get payments");
 
@@ -33,6 +39,8 @@ pub async fn get(State(data): State<Data>, Query(query): Query<SummaryQuery>) ->
         default: build(summary[0]),
         fallback: build(summary[1]),
     };
+
+    tracing::debug!("Summary processed in {:?}", start.elapsed());
 
     Json(summary)
 }
