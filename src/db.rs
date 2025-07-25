@@ -6,8 +6,19 @@ use rusqlite::{Connection, Result, params};
 
 const DB_FILE: &str = "/sqlite/rinha.db";
 
+const MMAP_SIZE: &str = "67108864";
+
 pub fn init_pool(max: u32) -> Result<Pool<SqliteConnectionManager>, r2d2::Error> {
-    let manager = SqliteConnectionManager::file(DB_FILE);
+    let manager = SqliteConnectionManager::file(DB_FILE).with_init(|conn| {
+        conn.pragma_update(None, "cache", "shared")?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        conn.pragma_update(None, "temp_store", "memory")?;
+        conn.pragma_update(None, "foreign_keys", "false")?;
+        conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
+
+        Ok(())
+    });
 
     Pool::builder()
         .connection_timeout(Duration::from_secs(1))

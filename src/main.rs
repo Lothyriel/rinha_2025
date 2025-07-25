@@ -4,14 +4,14 @@ mod worker;
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt::layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from("debug"))
         .with(
-            tracing_subscriber::fmt::layer()
+            layer()
                 .with_target(false)
                 .with_line_number(true)
                 .with_file(true),
