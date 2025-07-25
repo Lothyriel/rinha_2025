@@ -1,99 +1,41 @@
-mod payment;
-mod summary;
+use std::time::Duration;
 
-use std::sync::{Arc, atomic::AtomicUsize};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 
-use axum::{Router, routing};
-use http_body_util::Empty;
-use hyper::{Request, Uri, body::Bytes, client::conn};
-use rust_decimal::Decimal;
-use tokio::net::TcpStream;
-use tokio_postgres::{Client, NoTls};
-
-macro_rules! get_var {
-    ($name:expr) => {
-        std::env::var($name).expect(concat!("Environment variable not set: ", $name))
-    };
-}
-
-static ACTIVE_IDX: AtomicUsize = AtomicUsize::new(0);
+mod api;
+mod worker;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let urls: [Uri; 2] = [
-        Uri::from_static("http://payment-processor-default:8080"),
-        Uri::from_static("htt://payment-processor-fallback:8080"),
-    ];
+    let mode = std::env::args().nth(1);
 
-    let db_client = get_db_client().await.expect("DB Client");
+    let result = match mode.as_deref() {
+        Some("api") => api::serve().await,
+        Some("worker") => worker::serve().await,
+        m => panic!("Invalid mode {m:?}"),
+    };
 
-    let state = Arc::new(InnerData { urls, db_client });
-
-    let app = Router::new()
-        .route("/payments", routing::post(payment::create))
-        .route("/payments-summary", routing::get(summary::get))
-        .with_state(state);
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:80").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    result.expect("Failed to run app");
 }
 
-async fn get_db_client() -> Result<tokio_postgres::Client, tokio_postgres::Error> {
-    let user = get_var!("PG_USER");
-    let pass = get_var!("PG_PASS");
-    let host = get_var!("PG_HOST");
-    let database = get_var!("PG_DATABASE");
+const DB_FILE: &str = "/sqlite/rinha.db";
 
-    let conn_str = format!("postgres://{user}:{pass}@{host}/{database}");
+pub fn get_db_pool(max: u32) -> Pool<SqliteConnectionManager> {
+    let manager = SqliteConnectionManager::file(DB_FILE);
 
-    let (client, connection) = tokio_postgres::connect(&conn_str, NoTls).await?;
-
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            tracing::error!("DB Connection error: {}", e);
-        }
-    });
-
-    Ok(client)
+    Pool::builder()
+        .connection_timeout(Duration::from_secs(1))
+        .max_size(max)
+        .build(manager)
+        .expect("Unable to create pool")
 }
 
-async fn api(uri: &Uri) {
-    let authority = uri.authority().expect("Authority").as_str();
-    let stream = TcpStream::connect(authority).await.expect("TCP Connect");
-
-    let io = hyper_util::rt::TokioIo::new(stream);
-
-    let (mut sender, conn) = conn::http1::handshake(io).await.expect("Handshake");
-
-    tokio::task::spawn(async move {
-        if let Err(err) = conn.await {
-            tracing::error!("Connection failed: {:?}", err);
-        }
-    });
-
-    let req = Request::builder()
-        .uri(uri)
-        .header(hyper::header::HOST, authority)
-        .body(Empty::<Bytes>::new())
-        .expect("Valid request");
-
-    let res = sender.send_request(req).await.expect("Send request");
-
-    tracing::info!("Response status: {}", res.status());
-}
-
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Payment {
     correlation_id: String,
-    amount: Decimal,
-}
-
-type Data = Arc<InnerData>;
-
-struct InnerData {
-    urls: [Uri; 2],
-    db_client: Client,
+    amount: rust_decimal::Decimal,
 }
