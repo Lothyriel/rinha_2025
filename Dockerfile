@@ -5,7 +5,7 @@ COPY Cargo.toml ./
 
 RUN cargo build --release
 
-FROM alpine:latest
+FROM debian:latest
 
 EXPOSE 3000
 
