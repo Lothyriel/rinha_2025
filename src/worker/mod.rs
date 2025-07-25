@@ -33,9 +33,11 @@ pub async fn serve() -> Result<()> {
     tracing::info!("Starting worker...");
 
     let pool = db::init_pool(1)?;
-    let conn = pool.get()?;
 
-    db::init_db(&conn)?;
+    {
+        let conn = pool.get()?;
+        db::init_db(&conn)?;
+    }
 
     let (tx, rx): (Sender, Receiver) = mpsc::unbounded_channel();
 
