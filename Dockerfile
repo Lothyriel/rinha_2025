@@ -7,8 +7,9 @@ RUN cargo build --release
 
 FROM debian:latest
 
-EXPOSE 3000
+EXPOSE 80
 
 COPY --from=builder /target/release/rinha_2025 /
 
 ENTRYPOINT ["./rinha_2025"]
+CMD []
