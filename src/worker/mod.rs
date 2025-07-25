@@ -1,69 +1,67 @@
-use std::{
-    future,
-    net::{IpAddr, Ipv4Addr},
-};
+mod processor;
+pub mod rpc;
 
-use anyhow::{Result, anyhow};
-use chrono::Utc;
-use futures::StreamExt;
+use std::net::{IpAddr, Ipv4Addr};
+
+use anyhow::Result;
+use futures::{StreamExt, future};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use reqwest::{Client, StatusCode};
-use rusqlite::{Connection, params};
-use rust_decimal::{dec, prelude::ToPrimitive};
+use reqwest::Client;
 use tarpc::{
-    client, context,
-    serde_transport::tcp::connect,
+    serde_transport::tcp,
     server::{self, Channel},
-    tokio_serde::formats::Bincode,
+    tokio_serde::formats,
 };
 use tokio::sync::mpsc;
 
-use crate::{Payment, get_db_pool};
+use crate::{
+    db,
+    worker::rpc::{PaymentService, PaymentWorker},
+};
 
-pub async fn client(addr: &str) -> Result<PaymentsClient> {
-    let transport = connect(addr, Bincode::default);
-
-    let client = PaymentsClient::new(client::Config::default(), transport.await?).spawn();
-
-    Ok(client)
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct Payment {
+    pub amount: u64,
+    pub correlation_id: String,
 }
 
 pub async fn serve() -> Result<()> {
-    tracing::info!("Starting worker...");
     let server_addr = (IpAddr::V4(Ipv4Addr::UNSPECIFIED), 80);
+    let listener = tcp::listen(&server_addr, formats::Bincode::default).await?;
 
-    let listener = tarpc::serde_transport::tcp::listen(&server_addr, Bincode::default).await?;
-    tracing::info!("RPC listening on {}", listener.local_addr());
+    tracing::info!("Starting worker...");
 
-    let pool = get_db_pool(1);
-    init_db(&pool.get().expect("Should get connection from the pool"))?;
+    let pool = db::init_pool(1)?;
+    let conn = pool.get()?;
+
+    db::init_db(&conn)?;
+
     let (tx, rx): (Sender, Receiver) = mpsc::unbounded_channel();
 
+    tracing::info!("Starting mpsc consumer");
     tokio::spawn(start_consumer(rx, pool));
 
+    tracing::info!("RPC listening on {}", listener.local_addr());
     listener
         .filter_map(|r| future::ready(r.ok()))
         .map(server::BaseChannel::with_defaults)
-        .inspect(|c| tracing::info!("RPC connect on {:?}", c.transport().peer_addr()))
-        .for_each(|channel| {
-            let server = PaymentServer(tx.clone());
-            channel.execute(server.serve()).for_each(spawn)
+        .inspect(|c| tracing::debug!("RPC connect on {:?}", c.transport().peer_addr()))
+        .for_each(|channel| async {
+            let server = PaymentWorker(tx.clone());
+
+            tokio::spawn(async {
+                channel
+                    .execute(server.serve())
+                    .for_each(|f| async {
+                        tokio::spawn(f);
+                    })
+                    .await;
+
+                tracing::debug!("PaymentServer disconnected");
+            });
         })
         .await;
-
-    Ok(())
-}
-
-fn init_db(conn: &Connection) -> Result<()> {
-    let sql = r#"CREATE TABLE IF NOT EXISTS payments (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    requested_at INTEGER NOT NULL,
-                    amount INTEGER NOT NULL,
-                    processor_id INTEGER NOT NULL
-                );"#;
-
-    conn.execute_batch(sql)?;
 
     Ok(())
 }
@@ -72,83 +70,15 @@ async fn start_consumer(mut rx: Receiver, pool: Pool<SqliteConnectionManager>) {
     let client = Client::new();
 
     while let Some(payment) = rx.recv().await {
-        process(pool.clone(), &client, payment).await
-    }
-}
+        tracing::debug!("{} : mpsc_recv", payment.correlation_id);
 
-type Sender = mpsc::UnboundedSender<Payment>;
-type Receiver = mpsc::UnboundedReceiver<Payment>;
+        let result = processor::handle(pool.clone(), &client, payment).await;
 
-async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
-    tokio::spawn(fut);
-}
-
-#[tarpc::service]
-pub trait Payments {
-    async fn process(payment: Payment);
-}
-
-#[derive(Clone)]
-struct PaymentServer(Sender);
-
-impl Payments for PaymentServer {
-    async fn process(self, _: context::Context, payment: Payment) {
-        self.0.send(payment).expect("Should send to mpsc")
-    }
-}
-
-async fn process(pool: Pool<SqliteConnectionManager>, client: &Client, payment: Payment) {
-    let now = Utc::now().timestamp_millis();
-
-    let processor_id = process_payment(client, &payment).await;
-
-    let conn = pool.get().expect("Should get connection from the pool");
-
-    let amount = payment.amount * dec!(100);
-
-    insert_payment(
-        &conn,
-        now,
-        amount.to_u64().expect("Valid u64"),
-        processor_id,
-    );
-}
-
-const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
-    (1, "http://payment-processor-default:8080"),
-    (2, "http://payment-processor-fallback:8080"),
-];
-
-async fn process_payment(client: &Client, payment: &Payment) -> u8 {
-    //todo: this needs to be handled way better
-    //todo: map and use the GET /payments/service-health
-    for (id, uri) in PAYMENT_PROCESSORS {
-        let result = send(uri, client, payment).await;
-
-        match result {
-            Ok(_) => return id,
-            Err(_) => continue,
+        if let Err(e) = result {
+            tracing::error!("CONSUMER: {e}");
         }
     }
-
-    panic!("Neither processor is working ATM")
 }
 
-async fn send(uri: &str, client: &Client, payment: &Payment) -> anyhow::Result<()> {
-    let res = client.post(uri).json(payment).send().await?;
-
-    tracing::info!("Response status: {}", res.status());
-
-    match res.status() {
-        StatusCode::OK => Ok(()),
-        _ => Err(anyhow!("{}", res.text().await?)),
-    }
-}
-
-fn insert_payment(conn: &Connection, requested_at: i64, amount: u64, id: u8) {
-    conn.execute(
-        "INSERT INTO payments (requested_at, amount, processor_id) VALUES (?, ?, ?)",
-        params![requested_at, amount, id],
-    )
-    .expect("Failed to increment stats");
-}
+pub type Sender = mpsc::UnboundedSender<Payment>;
+pub type Receiver = mpsc::UnboundedReceiver<Payment>;

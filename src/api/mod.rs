@@ -6,17 +6,14 @@ use axum::{Router, routing};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
-use crate::{
-    get_db_pool,
-    worker::{self, PaymentsClient},
-};
+use crate::{db::init_pool, worker::rpc};
 
-pub async fn serve() -> Result<()> {
+pub async fn serve(worker_addr: &str) -> Result<()> {
     tracing::info!("Starting API...");
 
-    let pool = get_db_pool(10);
+    let pool = init_pool(10)?;
 
-    let client = worker::client("worker:80").await?;
+    let client = rpc::client(worker_addr).await?;
 
     let state = Data { pool, client };
 
@@ -34,5 +31,5 @@ pub async fn serve() -> Result<()> {
 #[derive(Clone)]
 struct Data {
     pool: Pool<SqliteConnectionManager>,
-    client: PaymentsClient,
+    client: rpc::PaymentServiceClient,
 }

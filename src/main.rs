@@ -1,41 +1,48 @@
-use std::time::Duration;
-
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
-
 mod api;
+mod db;
 mod worker;
+
+use anyhow::{Result, anyhow};
+use clap::Parser;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from("debug"))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_line_number(true)
+                .with_file(true),
+        )
+        .init();
 
-    let mode = std::env::args().nth(1);
-
-    let result = match mode.as_deref() {
-        Some("api") => api::serve().await,
-        Some("worker") => worker::serve().await,
-        m => panic!("Invalid mode {m:?}"),
-    };
-
-    result.expect("Failed to run app");
+    if let Err(e) = serve(Args::parse()).await {
+        tracing::error!("FATAL: Exiting | {e}");
+    }
 }
 
-const DB_FILE: &str = "/sqlite/rinha.db";
+async fn serve(args: Args) -> Result<()> {
+    match args.mode.as_str() {
+        "api" => {
+            let addr = args
+                .worker_addr
+                .unwrap_or_else(|| unreachable!("Clap shouldn't allow missing worker_addr"));
 
-pub fn get_db_pool(max: u32) -> Pool<SqliteConnectionManager> {
-    let manager = SqliteConnectionManager::file(DB_FILE);
-
-    Pool::builder()
-        .connection_timeout(Duration::from_secs(1))
-        .max_size(max)
-        .build(manager)
-        .expect("Unable to create pool")
+            api::serve(&addr).await
+        }
+        "worker" => worker::serve().await,
+        _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
+    }
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Payment {
-    correlation_id: String,
-    amount: rust_decimal::Decimal,
+#[derive(Parser)]
+#[command(name = "rinha", about = "Rinha 2025 ")]
+struct Args {
+    #[arg(value_parser = ["api", "worker"])]
+    mode: String,
+
+    #[arg(required_if_eq("mode", "api"))]
+    worker_addr: Option<String>,
 }

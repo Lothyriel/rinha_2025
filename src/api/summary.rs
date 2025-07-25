@@ -1,13 +1,13 @@
+use anyhow::Result;
 use axum::{
     Json,
     extract::{Query, State},
 };
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, params};
 use rust_decimal::{Decimal, dec};
 use tokio::time::Instant;
 
-use crate::api::Data;
+use crate::{api::Data, db};
 
 #[derive(serde::Deserialize)]
 pub struct SummaryQuery {
@@ -18,36 +18,39 @@ pub struct SummaryQuery {
 pub async fn get(State(data): State<Data>, Query(query): Query<SummaryQuery>) -> Json<Summary> {
     let start = Instant::now();
 
-    let conn = data
-        .pool
-        .get()
-        .expect("Should get connection from the pool");
+    let summary = get_summary(data, query).expect("Should get summary");
 
-    let payments = get_payments(&conn, query).expect("Failed to get payments");
+    tracing::info!("Summary processed in {:?}", start.elapsed());
+
+    Json(summary)
+}
+
+fn get_summary(data: Data, query: SummaryQuery) -> Result<Summary> {
+    let conn = data.pool.get()?;
+
+    let query = (query.from.timestamp_millis(), query.to.timestamp_millis());
+
+    let payments = db::get_payments(&conn, query)?;
 
     let summary = payments.iter().fold([(0, 0), (0, 0)], |mut acc, p| {
         match p.processor_id {
-            1 => inc(&mut acc[0], p),
-            2 => inc(&mut acc[1], p),
+            1 => inc(&mut acc[0], p.amount),
+            2 => inc(&mut acc[1], p.amount),
             id => unreachable!("processor_id {{{id}}} should not exist"),
         };
 
         acc
     });
 
-    let summary = Summary {
+    Ok(Summary {
         default: build(summary[0]),
         fallback: build(summary[1]),
-    };
-
-    tracing::debug!("Summary processed in {:?}", start.elapsed());
-
-    Json(summary)
+    })
 }
 
-fn inc(acc: &mut (u64, u64), tx: &CompletedPayment) {
+fn inc(acc: &mut (u64, u64), amount: u64) {
     acc.0 += 1;
-    acc.1 += tx.amount;
+    acc.1 += amount;
 }
 
 fn build((total_requests, total_amount): (u64, u64)) -> ProcessedData {
@@ -55,29 +58,6 @@ fn build((total_requests, total_amount): (u64, u64)) -> ProcessedData {
         total_requests,
         total_amount: Decimal::from(total_amount) / dec!(100),
     }
-}
-
-fn get_payments(
-    conn: &Connection,
-    query: SummaryQuery,
-) -> Result<Vec<CompletedPayment>, rusqlite::Error> {
-    let mut stmt = conn
-        .prepare("SELECT processor_id, amount FROM payments WHERE requested_at BETWEEN ? AND ?;")?;
-
-    let (from, to) = (query.from.timestamp_millis(), query.to.timestamp_millis());
-
-    stmt.query_map(params![from, to], |row| {
-        Ok(CompletedPayment {
-            processor_id: row.get(0)?,
-            amount: row.get(1)?,
-        })
-    })?
-    .collect()
-}
-
-struct CompletedPayment {
-    processor_id: u8,
-    amount: u64,
 }
 
 #[derive(serde::Serialize)]

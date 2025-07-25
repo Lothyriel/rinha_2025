@@ -13,7 +13,7 @@ COPY . .
 RUN cargo build --release
 
 FROM debian:stable-slim AS runtime
-COPY --from=builder /target/release/rinha_2025 /
+COPY --from=builder /target/release/rinha /
 
 ENTRYPOINT ["./rinha"]
 CMD []
