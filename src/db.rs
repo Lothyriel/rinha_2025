@@ -4,8 +4,7 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, Result, params};
 
-const DB_FILE: &str = "/sqlite/rinha.db";
-
+const DB_FILE: &str = "./data/rinha.db";
 const MMAP_SIZE: &str = "67108864";
 
 pub fn init_pool(max: u32) -> Result<Pool<SqliteConnectionManager>, r2d2::Error> {
