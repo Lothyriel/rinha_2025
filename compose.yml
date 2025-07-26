@@ -1,7 +1,6 @@
 services:
   api_0:
-    build:
-      context: .
+    image: rinha
     networks:
       - backend
     volumes:
@@ -16,8 +15,7 @@ services:
           memory: "30MB"
 
   api_1:
-    build:
-      context: .
+    image: rinha
     networks:
       - backend
     volumes:
@@ -31,8 +29,7 @@ services:
           cpus: "0.3"
           memory: "30MB"
   worker:
-    build:
-      context: .
+    image: rinha
     networks:
       - backend
       - payment-processor
