@@ -19,7 +19,7 @@ services:
     networks:
       - backend
     volumes:
-      - data:/sqlite
+      - data:/data
     command: ["-m", "api", "-w", "worker:80"]
     depends_on:
       - worker
