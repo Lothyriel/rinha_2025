@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.98"
 
+clap = { version = "4.5.41", features = ["derive"] }
+
 axum = "0.8.4"
 
 chrono = { version = "0.4.41", features = ["serde"] }
@@ -20,11 +22,10 @@ rust_decimal = { version = "1.37.2", features = ["macros"] }
 
 serde = { version = "1.0.219", features = ["derive"] }
 
-tokio = { version = "1.46.1", features = ["rt-multi-thread"] }
+tokio = { version = "1.47.0", features = ["rt-multi-thread"] }
 futures = "0.3.31"
 
 tarpc = { version = "0.36", features = ["tokio1", "tcp", "serde-transport-bincode"] }
 
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-clap = { version = "4.5.41", features = ["derive"] }
