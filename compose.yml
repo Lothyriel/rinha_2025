@@ -11,8 +11,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.3"
-          memory: "30MB"
+          cpus: "0.35"
+          memory: "80MB"
 
   api_1:
     image: rinha
@@ -26,8 +26,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.3"
-          memory: "30MB"
+          cpus: "0.35"
+          memory: "80MB"
   worker:
     image: rinha
     networks:
@@ -39,8 +39,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.6"
-          memory: "240MB"
+          cpus: "0.5"
+          memory: "140MB"
 
   nginx:
     image: nginx:latest
