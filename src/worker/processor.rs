@@ -61,7 +61,7 @@ async fn process(client: &Client, payment: &ProcessorPayment) -> u8 {
 }
 
 #[tracing::instrument(skip_all)]
-async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> anyhow::Result<()> {
+async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> Result<()> {
     let res = client
         .post(format!("{uri}/payments"))
         .json(payment)

@@ -51,10 +51,7 @@ pub fn insert_payment(conn: &Connection, requested_at: i64, amount: u64, id: u8)
     Ok(())
 }
 
-pub fn get_payments(
-    conn: &Connection,
-    (from, to): (i64, i64),
-) -> Result<Vec<CompletedPayment>, rusqlite::Error> {
+pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<CompletedPayment>> {
     let mut stmt = conn
         .prepare("SELECT processor_id, amount FROM payments WHERE requested_at BETWEEN ? AND ?;")?;
 

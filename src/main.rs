@@ -19,7 +19,10 @@ async fn main() {
             layer()
                 .with_target(false)
                 .with_line_number(true)
-                .with_file(true),
+                .with_file(true)
+                .with_thread_ids(true)
+                .with_level(true)
+                .with_ansi(args.ansi),
         )
         .init();
 
@@ -47,10 +50,12 @@ async fn serve(args: Args) -> Result<()> {
 struct Args {
     #[arg(short = 'l', default_value = "info", value_parser = ["error", "warn", "info", "debug", "trace"])]
     log_level: String,
-    #[arg(short = 'p', default_value = "80")]
+    #[arg(short = 'p', default_value_t = 80)]
     port: u16,
     #[arg(short = 'm', value_parser = ["api", "worker"])]
     mode: String,
     #[arg(short = 'w', required_if_eq("mode", "api"))]
     worker_addr: Option<String>,
+    #[arg(long = "ansi", default_value_t = false)]
+    ansi: bool,
 }
