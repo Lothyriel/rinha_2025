@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 jobs:
-  docker:
+  publish:
     runs-on: ubuntu-latest
 
     permissions:
