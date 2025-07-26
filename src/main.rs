@@ -7,9 +7,14 @@ use clap::Parser;
 use tracing_subscriber::{fmt::layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
+#[tracing::instrument]
 async fn main() {
+    let args = Args::parse();
+
+    let env_filter = format!("{},tarpc=warn", args.log_level);
+
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from("debug"))
+        .with(tracing_subscriber::EnvFilter::from(env_filter))
         .with(
             layer()
                 .with_target(false)
@@ -18,8 +23,8 @@ async fn main() {
         )
         .init();
 
-    if let Err(e) = serve(Args::parse()).await {
-        tracing::error!("FATAL: Exiting | {e}");
+    if let Err(e) = serve(args).await {
+        tracing::error!("FATAL: Exiting|err:{e}");
     }
 }
 
@@ -30,9 +35,9 @@ async fn serve(args: Args) -> Result<()> {
                 .worker_addr
                 .unwrap_or_else(|| unreachable!("Clap shouldn't allow missing worker_addr"));
 
-            api::serve(&addr).await
+            api::serve(args.port, &addr).await
         }
-        "worker" => worker::serve().await,
+        "worker" => worker::serve(args.port).await,
         _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
     }
 }
@@ -40,9 +45,12 @@ async fn serve(args: Args) -> Result<()> {
 #[derive(Parser)]
 #[command(about = "Rinha 2025")]
 struct Args {
+    #[arg(short = 'l', default_value = "info", value_parser = ["error", "warn", "info", "debug", "trace"])]
+    log_level: String,
+    #[arg(short = 'p', default_value = "80")]
+    port: u16,
     #[arg(short = 'm', value_parser = ["api", "worker"])]
     mode: String,
-
     #[arg(short = 'w', required_if_eq("mode", "api"))]
     worker_addr: Option<String>,
 }
