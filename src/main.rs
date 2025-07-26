@@ -7,7 +7,7 @@ use clap::Parser;
 use tracing_subscriber::{fmt::layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 async fn main() {
     let args = Args::parse();
 

@@ -20,7 +20,7 @@ pub trait PaymentService {
 pub struct PaymentWorker(pub Sender);
 
 impl PaymentService for PaymentWorker {
-    #[tracing::instrument]
+    #[tracing::instrument(skip_all)]
     async fn process(self, _: context::Context, payment: Payment) {
         tracing::info!("rpc_recv: {}", payment.correlation_id);
 

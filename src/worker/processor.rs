@@ -38,7 +38,7 @@ const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
     (2, "http://payment-processor-fallback:8080"),
 ];
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 async fn process(client: &Client, payment: &ProcessorPayment) -> u8 {
     //todo: this needs to be handled way better
     //todo: map and use the GET /payments/service-health
@@ -60,7 +60,7 @@ async fn process(client: &Client, payment: &ProcessorPayment) -> u8 {
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> anyhow::Result<()> {
     let res = client
         .post(format!("{uri}/payments"))

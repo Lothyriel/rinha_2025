@@ -26,7 +26,7 @@ pub struct Payment {
     pub correlation_id: String,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 pub async fn serve(port: u16) -> Result<()> {
     tracing::info!("Starting worker on port {port}");
 
@@ -65,13 +65,13 @@ pub async fn serve(port: u16) -> Result<()> {
     Ok(())
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 fn start_consumer(rx: Receiver, pool: Pool<SqliteConnectionManager>) {
     tracing::info!("Starting mpsc consumer");
     tokio::spawn(consumer(rx, pool));
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 async fn consumer(mut rx: Receiver, pool: Pool<SqliteConnectionManager>) {
     let client = Client::new();
 

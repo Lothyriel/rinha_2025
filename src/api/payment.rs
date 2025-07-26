@@ -5,7 +5,7 @@ use tokio::time::Instant;
 
 use crate::{api::Data, worker::Payment};
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 pub async fn create(State(data): State<Data>, Json(payment): Json<PaymentRequest>) -> StatusCode {
     let start = Instant::now();
 
@@ -18,7 +18,7 @@ pub async fn create(State(data): State<Data>, Json(payment): Json<PaymentRequest
     StatusCode::OK
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 async fn send(data: Data, payment: PaymentRequest) {
     let cents = payment.amount / dec!(100);
 

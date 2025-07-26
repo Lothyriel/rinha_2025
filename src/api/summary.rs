@@ -15,6 +15,7 @@ pub struct SummaryQuery {
     to: DateTime<Utc>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn get(State(data): State<Data>, Query(query): Query<SummaryQuery>) -> Json<Summary> {
     let start = Instant::now();
 
