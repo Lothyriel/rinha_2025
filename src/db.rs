@@ -26,12 +26,16 @@ pub fn init_pool(max: u32) -> Result<Pool<SqliteConnectionManager>, r2d2::Error>
 }
 
 pub fn init_db(conn: &Connection) -> Result<()> {
-    let sql = r#"CREATE TABLE IF NOT EXISTS payments (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    requested_at INTEGER NOT NULL,
-                    amount INTEGER NOT NULL,
-                    processor_id INTEGER NOT NULL
-                );"#;
+    let sql = r#"
+    CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        requested_at INTEGER NOT NULL,
+        amount INTEGER NOT NULL,
+        processor_id INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_payments_requested_at ON payments(requested_at);
+    "#;
 
     conn.execute_batch(sql)?;
 
