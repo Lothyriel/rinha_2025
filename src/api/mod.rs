@@ -1,6 +1,8 @@
 mod payment;
 mod summary;
 
+use std::net::Ipv4Addr;
+
 use anyhow::Result;
 use axum::{Router, routing};
 use r2d2::Pool;
@@ -8,8 +10,8 @@ use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::{db::init_pool, worker::rpc};
 
-pub async fn serve(worker_addr: &str) -> Result<()> {
-    tracing::info!("Starting API...");
+pub async fn serve(port: u16, worker_addr: &str) -> Result<()> {
+    tracing::info!("Starting API on port {port}");
 
     let pool = init_pool(10)?;
 
@@ -22,13 +24,14 @@ pub async fn serve(worker_addr: &str) -> Result<()> {
         .route("/payments-summary", routing::get(summary::get))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:80").await?;
+    let addr = (Ipv4Addr::UNSPECIFIED, port);
+    let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Data {
     pool: Pool<SqliteConnectionManager>,
     client: rpc::PaymentServiceClient,

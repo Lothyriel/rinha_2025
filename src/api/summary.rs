@@ -20,7 +20,7 @@ pub async fn get(State(data): State<Data>, Query(query): Query<SummaryQuery>) ->
 
     let summary = get_summary(data, query).expect("Should get summary");
 
-    tracing::info!("Summary processed in {:?}", start.elapsed());
+    tracing::info!("pp_payments_summary_http_time: {:?}", start.elapsed());
 
     Json(summary)
 }

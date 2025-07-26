@@ -1,7 +1,7 @@
 mod processor;
 pub mod rpc;
 
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::Ipv4Addr;
 
 use anyhow::Result;
 use futures::{StreamExt, future};
@@ -26,25 +26,22 @@ pub struct Payment {
     pub correlation_id: String,
 }
 
-pub async fn serve() -> Result<()> {
-    let server_addr = (IpAddr::V4(Ipv4Addr::UNSPECIFIED), 80);
-    let listener = tcp::listen(&server_addr, formats::Bincode::default).await?;
+#[tracing::instrument]
+pub async fn serve(port: u16) -> Result<()> {
+    tracing::info!("Starting worker on port {port}");
 
-    tracing::info!("Starting worker...");
+    let addr = (Ipv4Addr::UNSPECIFIED, port);
+    let listener = tcp::listen(&addr, formats::Bincode::default).await?;
 
     let pool = db::init_pool(1)?;
-
     {
         let conn = pool.get()?;
         db::init_db(&conn)?;
     }
 
     let (tx, rx): (Sender, Receiver) = mpsc::unbounded_channel();
+    start_consumer(rx, pool);
 
-    tracing::info!("Starting mpsc consumer");
-    tokio::spawn(start_consumer(rx, pool));
-
-    tracing::info!("RPC listening on {}", listener.local_addr());
     listener
         .filter_map(|r| future::ready(r.ok()))
         .map(server::BaseChannel::with_defaults)
@@ -68,19 +65,26 @@ pub async fn serve() -> Result<()> {
     Ok(())
 }
 
-async fn start_consumer(mut rx: Receiver, pool: Pool<SqliteConnectionManager>) {
+#[tracing::instrument]
+fn start_consumer(rx: Receiver, pool: Pool<SqliteConnectionManager>) {
+    tracing::info!("Starting mpsc consumer");
+    tokio::spawn(consumer(rx, pool));
+}
+
+#[tracing::instrument]
+async fn consumer(mut rx: Receiver, pool: Pool<SqliteConnectionManager>) {
     let client = Client::new();
 
     while let Some(payment) = rx.recv().await {
-        tracing::debug!("{} : mpsc_recv", payment.correlation_id);
+        tracing::info!("mpsc_recv: {}", payment.correlation_id);
 
         let result = processor::handle(pool.clone(), &client, payment).await;
 
         if let Err(e) = result {
-            tracing::error!("CONSUMER: {e}");
+            tracing::error!("mpsc_err: {e}");
         }
     }
 }
 
 pub type Sender = mpsc::UnboundedSender<Payment>;
-pub type Receiver = mpsc::UnboundedReceiver<Payment>;
+type Receiver = mpsc::UnboundedReceiver<Payment>;

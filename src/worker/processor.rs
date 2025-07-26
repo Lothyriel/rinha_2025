@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use r2d2::Pool;
@@ -36,24 +38,29 @@ const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
     (2, "http://payment-processor-fallback:8080"),
 ];
 
+#[tracing::instrument]
 async fn process(client: &Client, payment: &ProcessorPayment) -> u8 {
     //todo: this needs to be handled way better
     //todo: map and use the GET /payments/service-health
-    for (id, uri) in PAYMENT_PROCESSORS {
-        let result = send(uri, client, payment).await;
 
-        match result {
-            Ok(_) => return id,
-            Err(e) => {
-                tracing::warn!("PAYMENT-PROCESSOR: /payments | {e}");
-                continue;
+    loop {
+        for (id, uri) in PAYMENT_PROCESSORS {
+            let result = send(uri, client, payment).await;
+
+            match result {
+                Ok(_) => return id,
+                Err(e) => {
+                    tracing::warn!("pp_payments_err: {e}");
+                    continue;
+                }
             }
         }
-    }
 
-    panic!("Neither processor is working ATM")
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
 }
 
+#[tracing::instrument]
 async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> anyhow::Result<()> {
     let res = client
         .post(format!("{uri}/payments"))
@@ -61,11 +68,13 @@ async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> anyhow:
         .send()
         .await?;
 
-    tracing::debug!("Response status: {}", res.status());
+    let status = res.status();
+
+    tracing::debug!("pp_payments_status: {status}");
 
     match res.status() {
         StatusCode::OK => Ok(()),
-        _ => Err(anyhow!("{}", res.text().await?)),
+        _ => Err(anyhow!("{status}")),
     }
 }
 

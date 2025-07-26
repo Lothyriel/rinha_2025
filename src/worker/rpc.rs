@@ -16,12 +16,16 @@ pub trait PaymentService {
     async fn process(payment: Payment);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PaymentWorker(pub Sender);
 
 impl PaymentService for PaymentWorker {
+    #[tracing::instrument]
     async fn process(self, _: context::Context, payment: Payment) {
-        tracing::debug!("{} : rpc_recv", payment.correlation_id);
-        self.0.send(payment).expect("Should send to mpsc")
+        tracing::info!("rpc_recv: {}", payment.correlation_id);
+
+        self.0
+            .send(payment)
+            .expect("Consumer should not have dropped")
     }
 }

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use axum::{Json, extract::State, http::StatusCode};
 use rust_decimal::{dec, prelude::ToPrimitive};
 use tarpc::context;
@@ -6,20 +5,21 @@ use tokio::time::Instant;
 
 use crate::{api::Data, worker::Payment};
 
+#[tracing::instrument]
 pub async fn create(State(data): State<Data>, Json(payment): Json<PaymentRequest>) -> StatusCode {
     let start = Instant::now();
 
-    tracing::debug!("rpc_send: {}", payment.correlation_id);
+    tracing::info!("rpc_send: {}", payment.correlation_id);
 
-    if let Err(e) = send(data, payment).await {
-        tracing::error!("rpc_send: {e}");
-    }
+    tokio::spawn(send(data, payment));
 
-    tracing::info!("Payment processed in {:?}", start.elapsed());
+    tracing::info!("pp_payments_http_time: {:?}", start.elapsed());
+
     StatusCode::OK
 }
 
-async fn send(data: Data, payment: PaymentRequest) -> Result<()> {
+#[tracing::instrument]
+async fn send(data: Data, payment: PaymentRequest) {
     let cents = payment.amount / dec!(100);
 
     let payment = Payment {
@@ -27,9 +27,9 @@ async fn send(data: Data, payment: PaymentRequest) -> Result<()> {
         correlation_id: payment.correlation_id,
     };
 
-    data.client.process(context::current(), payment).await?;
-
-    Ok(())
+    if let Err(e) = data.client.process(context::current(), payment).await {
+        tracing::error!("rpc_send: {e}");
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]
