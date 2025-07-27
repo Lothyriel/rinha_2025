@@ -1,23 +1,36 @@
 use std::time::Duration;
 
-use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{Connection, Result, params};
+use rusqlite::{Connection, OpenFlags, Result, params};
 
 const DB_FILE: &str = "./data/rinha.db";
 const MMAP_SIZE: &str = "67108864";
 
-pub fn init_pool(max: u32) -> Result<Pool<SqliteConnectionManager>, r2d2::Error> {
-    let manager = SqliteConnectionManager::file(DB_FILE).with_init(|conn| {
-        conn.pragma_update(None, "cache", "shared")?;
-        conn.pragma_update(None, "journal_mode", "WAL")?;
-        conn.pragma_update(None, "synchronous", "NORMAL")?;
-        conn.pragma_update(None, "temp_store", "memory")?;
-        conn.pragma_update(None, "foreign_keys", "false")?;
-        conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
+type Pool = r2d2::Pool<SqliteConnectionManager>;
 
-        Ok(())
-    });
+pub fn write_pool() -> Result<Pool, r2d2::Error> {
+    let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
+
+    init_pool(1, flags)
+}
+
+pub fn read_pool() -> Result<Pool, r2d2::Error> {
+    init_pool(5, OpenFlags::SQLITE_OPEN_READ_ONLY)
+}
+
+fn init_pool(max: u32, flags: OpenFlags) -> Result<Pool, r2d2::Error> {
+    let manager = SqliteConnectionManager::file(DB_FILE)
+        .with_flags(flags)
+        .with_init(|conn| {
+            conn.pragma_update(None, "cache", "shared")?;
+            conn.pragma_update(None, "journal_mode", "WAL")?;
+            conn.pragma_update(None, "synchronous", "NORMAL")?;
+            conn.pragma_update(None, "temp_store", "memory")?;
+            conn.pragma_update(None, "foreign_keys", "false")?;
+            conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
+
+            Ok(())
+        });
 
     Pool::builder()
         .connection_timeout(Duration::from_secs(1))

@@ -8,13 +8,13 @@ use axum::{Router, routing};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
-use crate::{db::init_pool, worker::rpc};
+use crate::{db, worker::rpc};
 
 #[tracing::instrument(skip_all)]
 pub async fn serve(port: u16, worker_addr: &str) -> Result<()> {
     tracing::info!("Starting API on port {port}");
 
-    let pool = init_pool(10)?;
+    let pool = db::read_pool()?;
 
     let client = rpc::client(worker_addr).await?;
 

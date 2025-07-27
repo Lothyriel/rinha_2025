@@ -33,7 +33,7 @@ pub async fn serve(port: u16) -> Result<()> {
     let addr = (Ipv4Addr::UNSPECIFIED, port);
     let listener = tcp::listen(&addr, formats::Bincode::default).await?;
 
-    let pool = db::init_pool(1)?;
+    let pool = db::write_pool()?;
     {
         let conn = pool.get()?;
         db::init_db(&conn)?;
