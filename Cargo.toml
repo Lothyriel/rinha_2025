@@ -9,6 +9,7 @@ anyhow = "1.0.98"
 clap = { version = "4.5.41", features = ["derive"] }
 
 axum = "0.8.4"
+axum-extra = { version = "0.10.1", features = ["query"] }
 
 chrono = { version = "0.4.41", features = ["serde"] }
 

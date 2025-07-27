@@ -1,8 +1,6 @@
 use anyhow::Result;
-use axum::{
-    Json,
-    extract::{Query, State},
-};
+use axum::{Json, extract::State};
+use axum_extra::extract::OptionalQuery;
 use chrono::{DateTime, Utc};
 use rust_decimal::{Decimal, dec};
 use tokio::time::Instant;
@@ -16,7 +14,10 @@ pub struct SummaryQuery {
 }
 
 #[tracing::instrument(skip_all)]
-pub async fn get(State(data): State<Data>, Query(query): Query<SummaryQuery>) -> Json<Summary> {
+pub async fn get(
+    State(data): State<Data>,
+    OptionalQuery(query): OptionalQuery<SummaryQuery>,
+) -> Json<Summary> {
     let start = Instant::now();
 
     let summary = get_summary(data, query).expect("Should get summary");
@@ -26,10 +27,14 @@ pub async fn get(State(data): State<Data>, Query(query): Query<SummaryQuery>) ->
     Json(summary)
 }
 
-fn get_summary(data: Data, query: SummaryQuery) -> Result<Summary> {
+fn get_summary(data: Data, query: Option<SummaryQuery>) -> Result<Summary> {
     let conn = data.pool.get()?;
 
-    let query = (query.from.timestamp_millis(), query.to.timestamp_millis());
+    let query = if let Some(query) = query {
+        (query.from.timestamp_millis(), query.to.timestamp_millis())
+    } else {
+        (0, i64::MAX)
+    };
 
     let payments = db::get_payments(&conn, query)?;
 
