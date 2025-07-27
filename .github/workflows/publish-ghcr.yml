@@ -2,7 +2,8 @@ name: Build and Publish Docker image
 
 on:
   push:
-    branches: [main]
+    tags:
+      - "v*.*.*"
 
 jobs:
   publish:
@@ -29,8 +30,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=ref,event=branch
-            type=raw,value=latest
+            type=ref,event=tag
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
