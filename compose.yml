@@ -1,6 +1,6 @@
 services:
   api_0: &api
-    image: rinha
+    image: localhost/rinha
     networks:
       - backend
     volumes:
@@ -18,7 +18,7 @@ services:
     <<: *api
 
   worker:
-    image: rinha
+    image: localhost/rinha
     networks:
       - backend
       - payment-processor
