@@ -1,5 +1,5 @@
 services:
-  api_0:
+  api_0: &api
     image: rinha
     networks:
       - backend
@@ -15,19 +15,8 @@ services:
           memory: "80MB"
 
   api_1:
-    image: rinha
-    networks:
-      - backend
-    volumes:
-      - data:/data
-    command: ["-m", "api", "-w", "worker:80"]
-    depends_on:
-      - worker
-    deploy:
-      resources:
-        limits:
-          cpus: "0.35"
-          memory: "80MB"
+    <<: *api
+
   worker:
     image: rinha
     networks:
