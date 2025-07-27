@@ -20,7 +20,7 @@ pub async fn create(State(data): State<Data>, Json(payment): Json<PaymentRequest
 
 #[tracing::instrument(skip_all)]
 async fn send(data: Data, payment: PaymentRequest) {
-    let cents = payment.amount / dec!(100);
+    let cents = payment.amount * dec!(100);
 
     let payment = Payment {
         amount: cents.to_u64().expect("Valid u64 repr"),
