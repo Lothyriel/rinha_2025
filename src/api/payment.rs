@@ -1,5 +1,4 @@
 use axum::{Json, extract::State, http::StatusCode};
-use rust_decimal::{dec, prelude::ToPrimitive};
 use tarpc::context;
 use tokio::time::Instant;
 
@@ -20,10 +19,10 @@ pub async fn create(State(data): State<Data>, Json(payment): Json<PaymentRequest
 
 #[tracing::instrument(skip_all)]
 async fn send(data: Data, payment: PaymentRequest) {
-    let cents = payment.amount * dec!(100);
+    let cents = payment.amount * 100.0;
 
     let payment = Payment {
-        amount: cents.to_u64().expect("Valid u64 repr"),
+        amount: cents as u64,
         correlation_id: payment.correlation_id,
     };
 
@@ -36,5 +35,5 @@ async fn send(data: Data, payment: PaymentRequest) {
 #[serde(rename_all = "camelCase")]
 pub struct PaymentRequest {
     correlation_id: String,
-    amount: rust_decimal::Decimal,
+    amount: f32,
 }

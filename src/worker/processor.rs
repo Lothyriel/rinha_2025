@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use reqwest::{Client, StatusCode};
-use rust_decimal::{Decimal, dec};
 
 use crate::{db, worker::Payment};
 
@@ -20,7 +19,7 @@ pub async fn handle(
 
     let payment = ProcessorPayment {
         requested_at: now,
-        amount: Decimal::from(amount) / dec!(100),
+        amount: amount as f32 / 100.0,
         correlation_id: payment.correlation_id,
     };
 
@@ -82,6 +81,6 @@ async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> Result<
 #[serde(rename_all = "camelCase")]
 struct ProcessorPayment {
     requested_at: DateTime<Utc>,
-    amount: Decimal,
+    amount: f32,
     correlation_id: String,
 }

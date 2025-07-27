@@ -2,7 +2,6 @@ use anyhow::Result;
 use axum::{Json, extract::State};
 use axum_extra::extract::OptionalQuery;
 use chrono::{DateTime, Utc};
-use rust_decimal::{Decimal, dec};
 use tokio::time::Instant;
 
 use crate::{api::Data, db};
@@ -62,7 +61,7 @@ fn inc(acc: &mut (u64, u64), amount: u64) {
 fn build((total_requests, total_amount): (u64, u64)) -> ProcessedData {
     ProcessedData {
         total_requests,
-        total_amount: Decimal::from(total_amount) / dec!(100),
+        total_amount: total_amount as f32 / 100.0,
     }
 }
 
@@ -76,5 +75,5 @@ pub struct Summary {
 #[serde(rename_all = "camelCase")]
 struct ProcessedData {
     total_requests: u64,
-    total_amount: Decimal,
+    total_amount: f32,
 }
