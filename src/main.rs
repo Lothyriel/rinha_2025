@@ -2,8 +2,9 @@ mod api;
 mod db;
 mod worker;
 
-use anyhow::{Result, anyhow};
+use anyhow::anyhow;
 use clap::Parser;
+use tokio::signal::unix::SignalKind;
 use tracing_subscriber::{fmt::layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -26,13 +27,27 @@ async fn main() {
         )
         .init();
 
-    if let Err(e) = serve(args).await {
-        tracing::error!("FATAL: Exiting|err:{e}");
+    let interrupt = signal(SignalKind::interrupt());
+    let terminate = signal(SignalKind::terminate());
+
+    let serve = serve(args);
+
+    tokio::select! {
+        _ = serve => {},
+        _ = interrupt => {},
+        _ = terminate => {},
     }
 }
 
-async fn serve(args: Args) -> Result<()> {
-    match args.mode.as_str() {
+async fn signal(kind: SignalKind) {
+    tokio::signal::unix::signal(kind)
+        .expect("failed to install signal handler")
+        .recv()
+        .await;
+}
+
+async fn serve(args: Args) {
+    let result = match args.mode.as_str() {
         "api" => {
             let addr = args
                 .worker_addr
@@ -42,6 +57,10 @@ async fn serve(args: Args) -> Result<()> {
         }
         "worker" => worker::serve(args.port).await,
         _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
+    };
+
+    if let Err(e) = result {
+        tracing::error!("FATAL: Exiting|err:{e}");
     }
 }
 
