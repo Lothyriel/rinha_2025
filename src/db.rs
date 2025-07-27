@@ -39,20 +39,18 @@ fn init_pool(max: u32, flags: OpenFlags) -> Result<Pool, r2d2::Error> {
 }
 
 pub fn init_db(conn: &Connection) -> Result<()> {
-    let sql = r#"
-    CREATE TABLE IF NOT EXISTS payments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        requested_at INTEGER NOT NULL,
-        amount INTEGER NOT NULL,
-        processor_id INTEGER NOT NULL
-    );
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            requested_at INTEGER NOT NULL,
+            amount INTEGER NOT NULL,
+            processor_id INTEGER NOT NULL
+        );
 
-    CREATE INDEX IF NOT EXISTS idx_payments_requested_at ON payments(requested_at);
-    "#;
-
-    conn.execute_batch(sql)?;
-
-    Ok(())
+        CREATE INDEX IF NOT EXISTS idx_payments_requested_at ON payments(requested_at);
+    "#,
+    )
 }
 
 pub fn insert_payment(conn: &Connection, requested_at: i64, amount: u64, id: u8) -> Result<()> {
@@ -75,6 +73,10 @@ pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<Com
         })
     })?
     .collect()
+}
+
+pub fn purge(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DELETE FROM payments;")
 }
 
 pub struct CompletedPayment {

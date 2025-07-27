@@ -4,7 +4,7 @@ mod summary;
 use std::net::Ipv4Addr;
 
 use anyhow::Result;
-use axum::{Router, routing};
+use axum::{Router, http::StatusCode, routing};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
@@ -22,6 +22,7 @@ pub async fn serve(port: u16, worker_addr: &str) -> Result<()> {
 
     let app = Router::new()
         .route("/payments", routing::post(payment::create))
+        .route("/purge-payments", routing::post(purge_db))
         .route("/payments-summary", routing::get(summary::get))
         .with_state(state);
 
@@ -30,6 +31,26 @@ pub async fn serve(port: u16, worker_addr: &str) -> Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+async fn purge_db() -> StatusCode {
+    fn purge() -> Result<()> {
+        let pool = db::write_pool()?;
+
+        let conn = pool.get()?;
+
+        db::purge(&conn)?;
+
+        Ok(())
+    }
+
+    match purge() {
+        Ok(_) => tracing::info!("DB purged"),
+        Err(e) => tracing::error!("{e}"),
+    }
+
+    StatusCode::OK
 }
 
 #[derive(Clone, Debug)]
