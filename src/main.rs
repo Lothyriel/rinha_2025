@@ -10,6 +10,7 @@ use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_otlp::{SpanExporter, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tokio::signal::unix::SignalKind;
+use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{
     EnvFilter,
     fmt::{format::FmtSpan, layer},
@@ -47,21 +48,22 @@ fn init_tracing(args: &Args) -> Result<()> {
 
     let openobserve_addr = args.oo_addr.as_deref().unwrap_or("http://openobserve:5080");
 
+    let headers = HashMap::from([(
+        "authorization".to_string(),
+        "Basic YWRtaW5AYWRtaW4uY29tOlh6cEQ3YThad2FKQTVBaDk=".to_string(),
+    )]);
+
+    let exporter = SpanExporter::builder()
+        .with_http()
+        .with_endpoint(openobserve_addr)
+        .with_headers(headers)
+        .build()?;
+
     let provider = SdkTracerProvider::builder()
-        .with_batch_exporter(
-            SpanExporter::builder()
-                .with_http()
-                .with_endpoint(openobserve_addr)
-                .with_protocol(opentelemetry_otlp::Protocol::HttpBinary)
-                .with_headers(HashMap::from([(
-                    "authorization".to_string(),
-                    "Basic YWRtaW5AYWRtaW4uY29tOlh6cEQ3YThad2FKQTVBaDk=".to_string(),
-                )]))
-                .build()?,
-        )
+        .with_batch_exporter(exporter)
         .build();
 
-    let otel_layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("rinha"));
+    let otel_layer = OpenTelemetryLayer::new(provider.tracer("rinha"));
 
     tracing_subscriber::registry()
         .with(filter)
