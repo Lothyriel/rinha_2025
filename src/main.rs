@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::{SpanExporter, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tokio::signal::unix::SignalKind;
