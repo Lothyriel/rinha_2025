@@ -2,9 +2,13 @@ mod api;
 mod db;
 mod worker;
 
+use std::collections::HashMap;
+
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use reqwest::Url;
+use opentelemetry::trace::TracerProvider as _;
+use opentelemetry_otlp::{SpanExporter, WithExportConfig, WithHttpConfig};
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use tokio::signal::unix::SignalKind;
 use tracing_subscriber::{
     EnvFilter,
@@ -28,13 +32,8 @@ async fn main() {
 }
 
 fn init_tracing(args: &Args) -> Result<()> {
-    let loki_addr = args.loki_addr.as_deref().unwrap_or("http://loki:3100");
-
-    let (loki_layer, task) = tracing_loki::builder()
-        .label("app", &args.mode)?
-        .build_url(Url::parse(loki_addr)?)?;
-
-    tokio::spawn(task);
+    let filter =
+        EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info,tarpc=warn"))?;
 
     let fmt = layer()
         .json()
@@ -44,12 +43,31 @@ fn init_tracing(args: &Args) -> Result<()> {
         .with_thread_ids(true)
         .with_level(true)
         .with_current_span(true)
-        .with_span_events(FmtSpan::CLOSE);
+        .with_span_events(FmtSpan::CLOSE)
+        .json();
+
+    let openobserve_addr = args.oo_addr.as_deref().unwrap_or("http://openobserve:5080");
+
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(
+            SpanExporter::builder()
+                .with_http()
+                .with_endpoint(openobserve_addr)
+                .with_protocol(opentelemetry_otlp::Protocol::HttpJson)
+                .with_headers(HashMap::from([(
+                    "authorization".to_string(),
+                    "Basic YWRtaW5AYWRtaW4uY29tOlh6cEQ3YThad2FKQTVBaDk=".to_string(),
+                )]))
+                .build()?,
+        )
+        .build();
+
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("rinha"));
 
     tracing_subscriber::registry()
-        .with(EnvFilter::new(format!("{},tarpc=warn", args.log_level)))
+        .with(filter)
         .with(fmt)
-        .with(loki_layer)
+        .with(otel_layer)
         .init();
 
     Ok(())
@@ -83,14 +101,12 @@ async fn serve(args: Args) {
 #[derive(Parser)]
 #[command(about = "Rinha 2025")]
 struct Args {
-    #[arg(short = 'l', default_value = "info", value_parser = ["error", "warn", "info", "debug", "trace"])]
-    log_level: String,
     #[arg(short = 'p', default_value_t = 80)]
     port: u16,
     #[arg(short = 'm', value_parser = ["api", "worker"])]
     mode: String,
-    #[arg(long = "loki")]
-    loki_addr: Option<String>,
+    #[arg(short = 'o')]
+    oo_addr: Option<String>,
     #[arg(short = 'w', required_if_eq("mode", "api"))]
     worker_addr: Option<String>,
 }
