@@ -43,8 +43,7 @@ fn init_tracing(args: &Args) -> Result<()> {
         .with_thread_ids(true)
         .with_level(true)
         .with_current_span(true)
-        .with_span_events(FmtSpan::CLOSE)
-        .json();
+        .with_span_events(FmtSpan::CLOSE);
 
     let openobserve_addr = args.oo_addr.as_deref().unwrap_or("http://openobserve:5080");
 
@@ -53,7 +52,7 @@ fn init_tracing(args: &Args) -> Result<()> {
             SpanExporter::builder()
                 .with_http()
                 .with_endpoint(openobserve_addr)
-                .with_protocol(opentelemetry_otlp::Protocol::HttpJson)
+                .with_protocol(opentelemetry_otlp::Protocol::HttpBinary)
                 .with_headers(HashMap::from([(
                     "authorization".to_string(),
                     "Basic YWRtaW5AYWRtaW4uY29tOlh6cEQ3YThad2FKQTVBaDk=".to_string(),

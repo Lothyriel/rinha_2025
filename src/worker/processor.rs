@@ -45,18 +45,19 @@ async fn process(client: &Client, payment: &ProcessorPayment) -> u8 {
 
     loop {
         for (id, uri) in PAYMENT_PROCESSORS {
-            let result = send(uri, client, payment).await;
+            for _ in 0..5 {
+                let result = send(uri, client, payment).await;
 
-            match result {
-                Ok(_) => return id,
-                Err(err) => {
-                    tracing::warn!(?err, "pp_payments_err");
-                    continue;
+                match result {
+                    Ok(_) => return id,
+                    Err(err) => {
+                        tracing::warn!(?err, "pp_payments_err");
+                        tokio::time::sleep(Duration::from_millis(200)).await;
+                        continue;
+                    }
                 }
             }
         }
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
