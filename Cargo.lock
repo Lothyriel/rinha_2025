@@ -1415,6 +1415,7 @@ dependencies = [
  "serde",
  "tarpc",
  "tokio",
+ "tower-http",
  "tracing",
  "tracing-opentelemetry 0.31.0",
  "tracing-subscriber",
@@ -1856,6 +1857,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

@@ -24,6 +24,7 @@ pub async fn serve(port: u16, worker_addr: &str) -> Result<()> {
         .route("/payments", routing::post(payment::create))
         .route("/payments-summary", routing::get(summary::get))
         .route("/purge-payments", routing::post(purge_db))
+        .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state);
 
     let addr = (Ipv4Addr::UNSPECIFIED, port);
