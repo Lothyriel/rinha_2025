@@ -2,41 +2,55 @@ mod api;
 mod db;
 mod worker;
 
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use clap::Parser;
+use reqwest::Url;
 use tokio::signal::unix::SignalKind;
-use tracing_subscriber::{fmt::layer, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    EnvFilter,
+    fmt::{format::FmtSpan, layer},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
 
 #[tokio::main]
 #[tracing::instrument(skip_all)]
 async fn main() {
     let args = Args::parse();
 
-    let env_filter = format!("{},tarpc=warn", args.log_level);
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from(env_filter))
-        .with(
-            layer()
-                .with_target(false)
-                .with_line_number(true)
-                .with_file(true)
-                .with_thread_ids(true)
-                .with_level(true)
-                .with_ansi(args.ansi),
-        )
-        .init();
-
-    let interrupt = signal(SignalKind::interrupt());
-    let terminate = signal(SignalKind::terminate());
-
-    let serve = serve(args);
+    init_tracing(&args).expect("Configure tracing");
 
     tokio::select! {
-        _ = serve => {},
-        _ = interrupt => {},
-        _ = terminate => {},
+        _ = serve(args) => {},
+        _ = signal(SignalKind::interrupt()) => {},
+        _ = signal(SignalKind::terminate()) => {},
     }
+}
+
+fn init_tracing(args: &Args) -> Result<()> {
+    let (loki_layer, task) = tracing_loki::builder()
+        .label("app", &args.mode)?
+        .build_url(Url::parse("http://loki:3100").unwrap())?;
+
+    tokio::spawn(task);
+
+    let fmt = layer()
+        .json()
+        .with_target(false)
+        .with_line_number(true)
+        .with_file(true)
+        .with_thread_ids(true)
+        .with_level(true)
+        .with_current_span(true)
+        .with_span_events(FmtSpan::CLOSE);
+
+    tracing_subscriber::registry()
+        .with(EnvFilter::new(format!("{},tarpc=warn", args.log_level)))
+        .with(fmt)
+        .with(loki_layer)
+        .init();
+
+    Ok(())
 }
 
 async fn signal(kind: SignalKind) {
@@ -59,8 +73,8 @@ async fn serve(args: Args) {
         _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
     };
 
-    if let Err(e) = result {
-        tracing::error!("FATAL: Exiting|err:{e}");
+    if let Err(err) = result {
+        tracing::error!(?err, "FATAL: Exiting");
     }
 }
 
@@ -73,8 +87,8 @@ struct Args {
     port: u16,
     #[arg(short = 'm', value_parser = ["api", "worker"])]
     mode: String,
+    #[arg(long = "loki")]
+    loki_addr: String,
     #[arg(short = 'w', required_if_eq("mode", "api"))]
     worker_addr: Option<String>,
-    #[arg(long = "ansi", default_value_t = false)]
-    ansi: bool,
 }
