@@ -22,8 +22,8 @@ pub async fn serve(port: u16, worker_addr: &str) -> Result<()> {
 
     let app = Router::new()
         .route("/payments", routing::post(payment::create))
-        .route("/purge-payments", routing::post(purge_db))
         .route("/payments-summary", routing::get(summary::get))
+        .route("/purge-payments", routing::post(purge_db))
         .with_state(state);
 
     let addr = (Ipv4Addr::UNSPECIFIED, port);
@@ -47,7 +47,7 @@ async fn purge_db() -> StatusCode {
 
     match purge() {
         Ok(_) => tracing::info!("DB purged"),
-        Err(e) => tracing::error!("{e}"),
+        Err(err) => tracing::error!(?err),
     }
 
     StatusCode::OK

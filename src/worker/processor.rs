@@ -8,6 +8,7 @@ use reqwest::{Client, StatusCode};
 
 use crate::{db, worker::Payment};
 
+#[tracing::instrument]
 pub async fn handle(
     pool: Pool<SqliteConnectionManager>,
     client: &Client,
@@ -48,8 +49,8 @@ async fn process(client: &Client, payment: &ProcessorPayment) -> u8 {
 
             match result {
                 Ok(_) => return id,
-                Err(e) => {
-                    tracing::warn!("pp_payments_err: {e}");
+                Err(err) => {
+                    tracing::warn!(?err, "pp_payments_err");
                     continue;
                 }
             }
@@ -69,7 +70,7 @@ async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> Result<
 
     let status = res.status();
 
-    tracing::debug!("pp_payments_status: {status}");
+    tracing::debug!(pp_payments_status = ?status);
 
     match res.status() {
         StatusCode::OK => Ok(()),

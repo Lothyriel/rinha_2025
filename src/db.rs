@@ -53,6 +53,7 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     )
 }
 
+#[tracing::instrument(skip_all)]
 pub fn insert_payment(conn: &Connection, requested_at: i64, amount: u64, id: u8) -> Result<()> {
     conn.execute(
         "INSERT INTO payments (requested_at, amount, processor_id) VALUES (?, ?, ?)",
@@ -62,17 +63,19 @@ pub fn insert_payment(conn: &Connection, requested_at: i64, amount: u64, id: u8)
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<CompletedPayment>> {
     let mut stmt = conn
         .prepare("SELECT processor_id, amount FROM payments WHERE requested_at BETWEEN ? AND ?;")?;
 
-    stmt.query_map(params![from, to], |row| {
+    let query_map = stmt.query_map(params![from, to], |row| {
         Ok(CompletedPayment {
             processor_id: row.get(0)?,
             amount: row.get(1)?,
         })
-    })?
-    .collect()
+    })?;
+
+    query_map.collect()
 }
 
 pub fn purge(conn: &Connection) -> Result<()> {

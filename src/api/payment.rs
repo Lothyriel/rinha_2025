@@ -1,18 +1,11 @@
 use axum::{Json, extract::State, http::StatusCode};
 use tarpc::context;
-use tokio::time::Instant;
 
 use crate::{api::Data, worker::Payment};
 
 #[tracing::instrument(skip_all)]
 pub async fn create(State(data): State<Data>, Json(payment): Json<PaymentRequest>) -> StatusCode {
-    let start = Instant::now();
-
-    tracing::info!("rpc_send: {}", payment.correlation_id);
-
     tokio::spawn(send(data, payment));
-
-    tracing::info!("pp_payments_http_time: {:?}", start.elapsed());
 
     StatusCode::OK
 }
@@ -26,8 +19,10 @@ async fn send(data: Data, payment: PaymentRequest) {
         correlation_id: payment.correlation_id,
     };
 
-    if let Err(e) = data.client.process(context::current(), payment).await {
-        tracing::error!("rpc_send: {e}");
+    tracing::info!(payment.correlation_id, "rpc_send");
+    match data.client.process(context::current(), payment).await {
+        Ok(_) => {}
+        Err(err) => tracing::error!(?err, "rpc_send"),
     }
 }
 

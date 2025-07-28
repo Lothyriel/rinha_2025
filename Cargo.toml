@@ -27,4 +27,4 @@ futures = "0.3.31"
 tarpc = { version = "0.36", features = ["tokio1", "tcp", "serde-transport-bincode"] }
 
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }

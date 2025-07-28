@@ -22,7 +22,8 @@ pub struct PaymentWorker(pub Sender);
 impl PaymentService for PaymentWorker {
     #[tracing::instrument(skip_all)]
     async fn process(self, _: context::Context, payment: Payment) {
-        tracing::info!("rpc_recv: {}", payment.correlation_id);
+        tracing::info!(payment.correlation_id, "rpc_recv");
+        tracing::info!(payment.correlation_id, "mpsc_send");
 
         self.0
             .send(payment)

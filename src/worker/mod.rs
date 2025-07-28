@@ -45,7 +45,7 @@ pub async fn serve(port: u16) -> Result<()> {
     listener
         .filter_map(|r| future::ready(r.ok()))
         .map(server::BaseChannel::with_defaults)
-        .inspect(|c| tracing::debug!("RPC connect on {:?}", c.transport().peer_addr()))
+        .inspect(|c| tracing::debug!(rpc_connect_addr = ?c.transport().peer_addr()))
         .for_each(|channel| async {
             let server = PaymentWorker(tx.clone());
 
@@ -76,12 +76,12 @@ async fn consumer(mut rx: Receiver, pool: Pool<SqliteConnectionManager>) {
     let client = Client::new();
 
     while let Some(payment) = rx.recv().await {
-        tracing::info!("mpsc_recv: {}", payment.correlation_id);
+        tracing::info!(payment.correlation_id, "mpsc_recv");
 
         let result = processor::handle(pool.clone(), &client, payment).await;
 
-        if let Err(e) = result {
-            tracing::error!("mpsc_err: {e}");
+        if let Err(er) = result {
+            tracing::error!(?er, "mpsc_err");
         }
     }
 }

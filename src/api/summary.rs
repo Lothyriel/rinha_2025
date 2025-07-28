@@ -2,7 +2,6 @@ use anyhow::Result;
 use axum::{Json, extract::State};
 use axum_extra::extract::OptionalQuery;
 use chrono::{DateTime, Utc};
-use tokio::time::Instant;
 
 use crate::{api::Data, db};
 
@@ -17,15 +16,12 @@ pub async fn get(
     State(data): State<Data>,
     OptionalQuery(query): OptionalQuery<SummaryQuery>,
 ) -> Json<Summary> {
-    let start = Instant::now();
-
     let summary = get_summary(data, query).expect("Should get summary");
-
-    tracing::info!("pp_payments_summary_http_time: {:?}", start.elapsed());
 
     Json(summary)
 }
 
+#[tracing::instrument(skip_all)]
 fn get_summary(data: Data, query: Option<SummaryQuery>) -> Result<Summary> {
     let conn = data.pool.get()?;
 
