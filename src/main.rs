@@ -46,16 +46,18 @@ fn init_tracing(args: &Args) -> Result<()> {
         .with_current_span(true)
         .with_span_events(FmtSpan::CLOSE);
 
-    let openobserve_addr = args.oo_addr.as_deref().unwrap_or("http://openobserve:5080");
+    let oo_addr = args.oo_addr.as_deref().unwrap_or("http://openobserve:5080");
+    let oo_auth = format!("Basic {}", args.oo_auth);
 
-    let headers = HashMap::from([(
-        "authorization".to_string(),
-        "Basic YWRtaW5AYWRtaW4uY29tOlh6cEQ3YThad2FKQTVBaDk=".to_string(),
-    )]);
+    let headers = HashMap::from([
+        ("authorization".to_string(), oo_auth),
+        ("stream-name".to_string(), "default".to_string()),
+        ("organization".to_string(), "default".to_string()),
+    ]);
 
     let exporter = SpanExporter::builder()
         .with_http()
-        .with_endpoint(openobserve_addr)
+        .with_endpoint(format!("{oo_addr}/api/default/v1/traces"))
         .with_headers(headers)
         .build()?;
 
@@ -102,12 +104,22 @@ async fn serve(args: Args) {
 #[derive(Parser)]
 #[command(about = "Rinha 2025")]
 struct Args {
-    #[arg(short = 'p', default_value_t = 80)]
+    #[arg(
+        short = 'p',
+        default_value_t = 80,
+        help = "The port in which the app will bind"
+    )]
     port: u16,
-    #[arg(short = 'm', value_parser = ["api", "worker"])]
+    #[arg(short = 'm', value_parser = ["api", "worker"], help = "The mode in which the binary will run")]
     mode: String,
-    #[arg(short = 'o')]
+    #[arg(short = 'o', help = "The address of openobserve")]
     oo_addr: Option<String>,
-    #[arg(short = 'w', required_if_eq("mode", "api"))]
+    #[arg(short = 'a', help = "Basic token for authorization in openobserve")]
+    oo_auth: String,
+    #[arg(
+        short = 'w',
+        required_if_eq("mode", "api"),
+        help = "The address of the worker app"
+    )]
     worker_addr: Option<String>,
 }

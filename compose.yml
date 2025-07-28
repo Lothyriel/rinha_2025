@@ -3,7 +3,15 @@ services:
     image: localhost/rinha
     volumes:
       - sqlite:/data
-    command: ["-m", "api", "-w", "worker:80"]
+    command:
+      [
+        "-m",
+        "api",
+        "-w",
+        "worker:80",
+        "-a",
+        "YWRtaW5AYWRtaW4uY29tOnE0allYbEdnVlMyZ3JOREk=",
+      ]
     depends_on:
       - worker
     deploy:
@@ -21,7 +29,8 @@ services:
       - payment-processor
     volumes:
       - sqlite:/data
-    command: ["-m", "worker"]
+    command:
+      ["-m", "worker", "-a", "YWRtaW5AYWRtaW4uY29tOnE0allYbEdnVlMyZ3JOREk="]
     depends_on:
       - openobserve
     deploy:
