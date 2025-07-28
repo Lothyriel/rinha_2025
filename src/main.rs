@@ -28,9 +28,11 @@ async fn main() {
 }
 
 fn init_tracing(args: &Args) -> Result<()> {
+    let loki_addr = args.loki_addr.as_deref().unwrap_or("http://loki:3100");
+
     let (loki_layer, task) = tracing_loki::builder()
         .label("app", &args.mode)?
-        .build_url(Url::parse("http://loki:3100").unwrap())?;
+        .build_url(Url::parse(loki_addr)?)?;
 
     tokio::spawn(task);
 
@@ -88,7 +90,7 @@ struct Args {
     #[arg(short = 'm', value_parser = ["api", "worker"])]
     mode: String,
     #[arg(long = "loki")]
-    loki_addr: String,
+    loki_addr: Option<String>,
     #[arg(short = 'w', required_if_eq("mode", "api"))]
     worker_addr: Option<String>,
 }
