@@ -56,7 +56,7 @@ async fn process(client: &Client, payment: &ProcessorPayment) -> u8 {
             }
         }
 
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
