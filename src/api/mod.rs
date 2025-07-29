@@ -1,12 +1,14 @@
 mod payment;
 mod summary;
 
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, time::Duration};
 
 use anyhow::Result;
-use axum::{Router, http::StatusCode, routing};
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
+use axum::{
+    Router,
+    http::{Request, StatusCode},
+    routing,
+};
 
 use crate::{db, worker::rpc};
 
@@ -20,11 +22,29 @@ pub async fn serve(port: u16, worker_addr: &str) -> Result<()> {
 
     let state = Data { pool, client };
 
+    let layer = tower_http::trace::TraceLayer::new_for_http()
+        .make_span_with(|request: &Request<_>| {
+            tracing::info_span!(
+                "http",
+                method = %request.method(),
+                uri = %request.uri(),
+                version = ?request.version(),
+            )
+        })
+        .on_request(|request: &Request<_>, _: &tracing::Span| {
+            tracing::info!(method = ?request.method(), url = ?request.uri(), "req");
+        })
+        .on_response(
+            |response: &axum::http::Response<_>, latency: Duration, _: &tracing::Span| {
+                tracing::info!(status = ?response.status(), ?latency, "res");
+            },
+        );
+
     let app = Router::new()
         .route("/payments", routing::post(payment::create))
         .route("/payments-summary", routing::get(summary::get))
         .route("/purge-payments", routing::post(purge_db))
-        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(layer)
         .with_state(state);
 
     let addr = (Ipv4Addr::UNSPECIFIED, port);
@@ -56,6 +76,13 @@ async fn purge_db() -> StatusCode {
 
 #[derive(Clone, Debug)]
 struct Data {
-    pool: Pool<SqliteConnectionManager>,
+    pool: db::Pool,
     client: rpc::PaymentServiceClient,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentRequest {
+    pub correlation_id: String,
+    pub amount: f32,
 }

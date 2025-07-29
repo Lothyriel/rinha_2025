@@ -30,7 +30,8 @@ async fn send_to_processor(client: &Client, payment: &ProcessorPayment) -> u8 {
 
     loop {
         for (id, uri) in PAYMENT_PROCESSORS {
-            for _ in 0..5 {
+            for i in 0..5 {
+                tracing::info!(pp_id = id, retry = i, "sending to payment-processor");
                 let result = send(uri, client, payment).await;
 
                 match result {
@@ -38,7 +39,6 @@ async fn send_to_processor(client: &Client, payment: &ProcessorPayment) -> u8 {
                     Err(err) => {
                         tracing::warn!(?err, "pp_payments_err");
                         tokio::time::sleep(Duration::from_millis(200)).await;
-                        continue;
                     }
                 }
             }
