@@ -11,20 +11,20 @@ clap = { version = "4.5.41", features = ["derive"] }
 axum = "0.8.4"
 axum-extra = { version = "0.10.1", features = ["query"] }
 
+reqwest = { version = "0.12.22", default-features = false, features = ["json"] }
+
 chrono = { version = "0.4.41", features = ["serde"] }
 
 r2d2 = "0.8.10"
 r2d2_sqlite = "0.31.0"
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 
-reqwest = { version = "0.12.22", default-features = false, features = ["json"] }
-
 serde = { version = "1.0.219", features = ["derive"] }
+bincode = { version = "2.0.1", features = ["serde"] }
 
-tokio = { version = "1.47.0", features = ["rt-multi-thread", "signal"] }
-futures = "0.3.31"
+tokio = { version = "1.47.0", features = ["rt-multi-thread", "signal", "io-util"] }
 
-tarpc = { version = "0.36", features = ["tokio1", "tcp", "serde-transport-bincode"] }
+tower-http = { version = "0.6.6", features = ["trace"] }
 
 tracing = "0.1.41"
 tracing-opentelemetry = "0.31.0"
@@ -32,4 +32,3 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "jso
 opentelemetry-otlp = "0.30.0"
 opentelemetry_sdk = { version = "0.30.0", features = ["rt-tokio"] }
 opentelemetry = "0.30.0"
-tower-http = { version = "0.6.6", features = ["trace"] }

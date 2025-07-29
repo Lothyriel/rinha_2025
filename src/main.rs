@@ -1,4 +1,5 @@
 mod api;
+mod data;
 mod db;
 mod worker;
 
@@ -85,14 +86,8 @@ async fn signal(kind: SignalKind) {
 
 async fn serve(args: Args) {
     let result = match args.mode.as_str() {
-        "api" => {
-            let addr = args
-                .worker_addr
-                .unwrap_or_else(|| unreachable!("Clap shouldn't allow missing worker_addr"));
-
-            api::serve(args.port, &addr).await
-        }
-        "worker" => worker::serve(args.port).await,
+        "api" => api::serve(args.port).await,
+        "worker" => worker::serve().await,
         _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
     };
 
@@ -107,7 +102,7 @@ struct Args {
     #[arg(
         short = 'p',
         default_value_t = 80,
-        help = "The port in which the app will bind"
+        help = "The port in which the api will bind"
     )]
     port: u16,
     #[arg(short = 'm', value_parser = ["api", "worker"], help = "The mode in which the binary will run")]
@@ -116,10 +111,4 @@ struct Args {
     oo_addr: Option<String>,
     #[arg(short = 'a', help = "Basic token for authorization in openobserve")]
     oo_auth: String,
-    #[arg(
-        short = 'w',
-        required_if_eq("mode", "api"),
-        help = "The address of the worker app"
-    )]
-    worker_addr: Option<String>,
 }

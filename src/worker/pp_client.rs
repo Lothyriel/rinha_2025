@@ -3,20 +3,7 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use reqwest::{Client, StatusCode};
 
-use crate::worker::{Payment, ProcessorPayment};
-
-#[tracing::instrument(skip_all)]
-pub async fn create(client: &Client, payment: ProcessorPayment) -> Payment {
-    let processor_id = send_to_processor(client, &payment).await;
-
-    let amount = payment.amount * 100.0;
-
-    Payment {
-        amount: amount as u64,
-        requested_at: payment.requested_at.timestamp_millis(),
-        processor_id,
-    }
-}
+use crate::data::ProcessorPaymentRequest;
 
 const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
     (1, "http://payment-processor-default:8080"),
@@ -24,7 +11,7 @@ const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
 ];
 
 #[tracing::instrument(skip_all)]
-async fn send_to_processor(client: &Client, payment: &ProcessorPayment) -> u8 {
+pub async fn send(client: &Client, payment: &ProcessorPaymentRequest) -> u8 {
     //todo: this needs to be handled way better
     //todo: map and use the GET /payments/service-health
 
@@ -32,7 +19,7 @@ async fn send_to_processor(client: &Client, payment: &ProcessorPayment) -> u8 {
         for (id, uri) in PAYMENT_PROCESSORS {
             for i in 0..5 {
                 tracing::info!(pp_id = id, retry = i, "sending to payment-processor");
-                let result = send(uri, client, payment).await;
+                let result = http_send(uri, client, payment).await;
 
                 match result {
                     Ok(_) => return id,
@@ -47,7 +34,7 @@ async fn send_to_processor(client: &Client, payment: &ProcessorPayment) -> u8 {
 }
 
 #[tracing::instrument(skip_all)]
-async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> Result<()> {
+async fn http_send(uri: &str, client: &Client, payment: &ProcessorPaymentRequest) -> Result<()> {
     let res = client
         .post(format!("{uri}/payments"))
         .json(payment)

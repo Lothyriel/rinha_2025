@@ -1,89 +1,109 @@
+mod payment;
 mod pp_client;
-pub mod rpc;
-
-use std::net::Ipv4Addr;
+mod summary;
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
-use futures::{StreamExt, future};
 use reqwest::Client;
-use tarpc::{serde_transport::tcp, server::Channel, tokio_serde::formats};
-use tokio::sync::mpsc;
-
-use crate::{
-    db,
-    worker::rpc::{PaymentService, PaymentWorker},
+use tokio::{
+    io::AsyncReadExt,
+    net::{UnixListener, UnixStream},
+    sync::mpsc,
 };
 
-pub struct Payment {
-    pub amount: u64,
-    pub requested_at: i64,
-    pub processor_id: u8,
-}
+use crate::{api, data, db};
 
 #[tracing::instrument(skip_all)]
-pub async fn serve(port: u16) -> Result<()> {
-    tracing::info!("Starting worker on port {port}");
+pub async fn serve() -> Result<()> {
+    tracing::info!("Starting worker");
 
-    let addr = (Ipv4Addr::UNSPECIFIED, port);
-    let listener = tcp::listen(&addr, formats::Bincode::default).await?;
-
-    let pool = db::write_pool()?;
+    let write = db::write_pool()?;
     {
-        let conn = pool.get()?;
+        let conn = write.get()?;
         db::init_db(&conn)?;
     }
 
+    let sender = start_consumer(write);
+
+    uds_listen(sender).await
+}
+
+fn start_consumer(write: db::Pool) -> Sender {
+    let (tx, mut rx): (Sender, Receiver) = mpsc::unbounded_channel();
+
+    tracing::info!("Starting mpsc consumer");
+
+    tokio::spawn(async move {
+        while let Some(payment) = rx.recv().await {
+            let result = handle_mpsc(payment, write.clone()).await;
+
+            if let Err(er) = result {
+                tracing::error!(?er, "mpsc_err");
+            }
+        }
+    });
+
+    tx
+}
+
+pub const UDS_PATH: &str = "/var/run/rinha.sock";
+
+async fn uds_listen(sender: Sender) -> Result<()> {
+    std::fs::remove_file(UDS_PATH).ok();
+    let listener = UnixListener::bind(UDS_PATH)?;
+    tracing::info!("listening on {}", UDS_PATH);
+
+    let pool = db::read_pool()?;
     let client = Client::new();
 
-    let (tx, rx): (Sender, Receiver) = mpsc::unbounded_channel();
-    start_consumer(rx, pool);
+    loop {
+        let sender = sender.clone();
+        let client = client.clone();
+        let pool = pool.clone();
 
-    listener
-        .filter_map(|r| future::ready(r.ok()))
-        .map(tarpc::server::BaseChannel::with_defaults)
-        .inspect(|c| tracing::debug!(rpc_connect_addr = ?c.transport().peer_addr()))
-        .for_each(|channel| async {
-            let server = PaymentWorker {
-                sender: tx.clone(),
-                client: client.clone(),
-            };
+        let (socket, _) = listener.accept().await?;
 
-            tokio::spawn(async {
-                channel
-                    .execute(server.serve())
-                    .for_each(|f| async {
-                        tokio::spawn(f);
-                    })
-                    .await;
+        tokio::spawn(async {
+            if let Err(err) = handle_uds(sender, client, pool, socket).await {
+                tracing::error!(err = ?err, "handle_uds");
+            }
+        });
+    }
+}
 
-                tracing::debug!("PaymentServer disconnected");
-            });
-        })
-        .await;
+#[tracing::instrument(skip_all)]
+async fn handle_uds(
+    sender: Sender,
+    client: Client,
+    pool: db::Pool,
+    mut socket: UnixStream,
+) -> Result<()> {
+    let mut buf = [0u8; 64];
+
+    let n = socket.read(&mut buf).await?;
+
+    match data::decode(&buf[..n]) {
+        WorkerRequest::Summary(query) => summary::process(pool, socket, buf, query).await?,
+        WorkerRequest::Payment(req) => payment::process(sender, client, req).await,
+        WorkerRequest::PurgeDb => purge_db()?,
+    }
+
+    Ok(())
+}
+
+fn purge_db() -> Result<()> {
+    let pool = db::write_pool()?;
+
+    let conn = pool.get()?;
+
+    db::purge(&conn)?;
+
+    tracing::info!("DB purged");
 
     Ok(())
 }
 
 #[tracing::instrument(skip_all)]
-fn start_consumer(rx: Receiver, pool: db::Pool) {
-    tracing::info!("Starting mpsc consumer");
-    tokio::spawn(consumer(rx, pool));
-}
-
-#[tracing::instrument(skip_all)]
-async fn consumer(mut rx: Receiver, pool: db::Pool) {
-    while let Some(payment) = rx.recv().await {
-        let result = handle(payment, pool.clone()).await;
-
-        if let Err(er) = result {
-            tracing::error!(?er, "mpsc_err");
-        }
-    }
-}
-
-#[tracing::instrument(skip_all)]
-async fn handle(payment: Payment, pool: db::Pool) -> Result<()> {
+async fn handle_mpsc(payment: data::Payment, pool: db::Pool) -> Result<()> {
     tracing::info!("mpsc_recv");
 
     let conn = pool.get()?;
@@ -93,13 +113,12 @@ async fn handle(payment: Payment, pool: db::Pool) -> Result<()> {
     Ok(())
 }
 
-pub type Sender = mpsc::UnboundedSender<Payment>;
-type Receiver = mpsc::UnboundedReceiver<Payment>;
-
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProcessorPayment {
-    pub requested_at: DateTime<Utc>,
-    pub amount: f32,
-    pub correlation_id: String,
+#[derive(serde::Serialize, serde::Deserialize)]
+pub enum WorkerRequest {
+    Summary((i64, i64)),
+    Payment(api::payment::Request),
+    PurgeDb,
 }
+
+pub type Sender = mpsc::UnboundedSender<data::Payment>;
+type Receiver = mpsc::UnboundedReceiver<data::Payment>;

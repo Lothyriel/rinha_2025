@@ -3,9 +3,9 @@ use std::time::Duration;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, OpenFlags, Result, params};
 
-use crate::worker::Payment;
+use crate::data::Payment;
 
-const DB_FILE: &str = "./data/rinha.db";
+const DB_FILE: &str = "./rinha.db";
 const MMAP_SIZE: &str = "67108864";
 
 pub type Pool = r2d2::Pool<SqliteConnectionManager>;
@@ -66,12 +66,12 @@ pub fn insert_payment(conn: &Connection, p: Payment) -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<CompletedPayment>> {
+pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<PaymentDto>> {
     let mut stmt = conn
         .prepare("SELECT processor_id, amount FROM payments WHERE requested_at BETWEEN ? AND ?;")?;
 
     let query_map = stmt.query_map(params![from, to], |row| {
-        Ok(CompletedPayment {
+        Ok(PaymentDto {
             processor_id: row.get(0)?,
             amount: row.get(1)?,
         })
@@ -84,7 +84,7 @@ pub fn purge(conn: &Connection) -> Result<()> {
     conn.execute_batch("DELETE FROM payments;")
 }
 
-pub struct CompletedPayment {
+pub struct PaymentDto {
     pub processor_id: u8,
     pub amount: u64,
 }

@@ -2,7 +2,7 @@ services:
   api_0: &api
     image: localhost/rinha
     volumes:
-      - sqlite:/data
+      - uds:/var/run
     command:
       [
         "-m",
@@ -17,8 +17,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.35"
-          memory: "80MB"
+          cpus: "0.3"
+          memory: "50MB"
 
   api_1:
     <<: *api
@@ -28,7 +28,7 @@ services:
     networks:
       - payment-processor
     volumes:
-      - sqlite:/data
+      - uds:/var/run
     command:
       ["-m", "worker", "-a", "YWRtaW5AYWRtaW4uY29tOmpMQUQ5NEJ1dml6VENUY0c="]
     depends_on:
@@ -36,8 +36,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: "140MB"
+          cpus: "0.6"
+          memory: "220MB"
 
   nginx:
     image: nginx:latest
@@ -52,7 +52,7 @@ services:
       resources:
         limits:
           cpus: "0.3"
-          memory: "50MB"
+          memory: "30MB"
 
   openobserve:
     image: public.ecr.aws/zinclabs/openobserve:latest
@@ -66,7 +66,7 @@ services:
       - openobserve:/data
 
 volumes:
-  sqlite:
+  uds:
   openobserve:
 
 networks:
