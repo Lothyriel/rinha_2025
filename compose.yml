@@ -3,15 +3,7 @@ services:
     image: localhost/rinha
     volumes:
       - uds:/var/run
-    command:
-      [
-        "-m",
-        "api",
-        "-w",
-        "worker:80",
-        "-a",
-        "YWRtaW5AYWRtaW4uY29tOmpMQUQ5NEJ1dml6VENUY0c=",
-      ]
+    command: ["-m", "api", "-a", "YWRtaW5AYWRtaW4uY29tOmpMQUQ5NEJ1dml6VENUY0c="]
     depends_on:
       - worker
     deploy:
