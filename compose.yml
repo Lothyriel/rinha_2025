@@ -10,7 +10,7 @@ services:
         "-w",
         "worker:80",
         "-a",
-        "YWRtaW5AYWRtaW4uY29tOnE0allYbEdnVlMyZ3JOREk=",
+        "YWRtaW5AYWRtaW4uY29tOmpMQUQ5NEJ1dml6VENUY0c=",
       ]
     depends_on:
       - worker
@@ -30,7 +30,7 @@ services:
     volumes:
       - sqlite:/data
     command:
-      ["-m", "worker", "-a", "YWRtaW5AYWRtaW4uY29tOnE0allYbEdnVlMyZ3JOREk="]
+      ["-m", "worker", "-a", "YWRtaW5AYWRtaW4uY29tOmpMQUQ5NEJ1dml6VENUY0c="]
     depends_on:
       - openobserve
     deploy:

@@ -1,18 +1,13 @@
-mod processor;
+mod pp_client;
 pub mod rpc;
 
 use std::net::Ipv4Addr;
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use futures::{StreamExt, future};
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
 use reqwest::Client;
-use tarpc::{
-    serde_transport::tcp,
-    server::{self, Channel},
-    tokio_serde::formats,
-};
+use tarpc::{serde_transport::tcp, server::Channel, tokio_serde::formats};
 use tokio::sync::mpsc;
 
 use crate::{
@@ -20,10 +15,10 @@ use crate::{
     worker::rpc::{PaymentService, PaymentWorker},
 };
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct Payment {
     pub amount: u64,
-    pub correlation_id: String,
+    pub requested_at: i64,
+    pub processor_id: u8,
 }
 
 #[tracing::instrument(skip_all)]
@@ -39,15 +34,20 @@ pub async fn serve(port: u16) -> Result<()> {
         db::init_db(&conn)?;
     }
 
+    let client = Client::new();
+
     let (tx, rx): (Sender, Receiver) = mpsc::unbounded_channel();
     start_consumer(rx, pool);
 
     listener
         .filter_map(|r| future::ready(r.ok()))
-        .map(server::BaseChannel::with_defaults)
+        .map(tarpc::server::BaseChannel::with_defaults)
         .inspect(|c| tracing::debug!(rpc_connect_addr = ?c.transport().peer_addr()))
         .for_each(|channel| async {
-            let server = PaymentWorker(tx.clone());
+            let server = PaymentWorker {
+                sender: tx.clone(),
+                client: client.clone(),
+            };
 
             tokio::spawn(async {
                 channel
@@ -66,19 +66,15 @@ pub async fn serve(port: u16) -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-fn start_consumer(rx: Receiver, pool: Pool<SqliteConnectionManager>) {
+fn start_consumer(rx: Receiver, pool: db::Pool) {
     tracing::info!("Starting mpsc consumer");
     tokio::spawn(consumer(rx, pool));
 }
 
 #[tracing::instrument(skip_all)]
-async fn consumer(mut rx: Receiver, pool: Pool<SqliteConnectionManager>) {
-    let client = Client::new();
-
+async fn consumer(mut rx: Receiver, pool: db::Pool) {
     while let Some(payment) = rx.recv().await {
-        tracing::info!(payment.correlation_id, "mpsc_recv");
-
-        let result = processor::handle(pool.clone(), &client, payment).await;
+        let result = handle(payment, pool.clone()).await;
 
         if let Err(er) = result {
             tracing::error!(?er, "mpsc_err");
@@ -86,5 +82,24 @@ async fn consumer(mut rx: Receiver, pool: Pool<SqliteConnectionManager>) {
     }
 }
 
+#[tracing::instrument(skip_all)]
+async fn handle(payment: Payment, pool: db::Pool) -> Result<()> {
+    tracing::info!("mpsc_recv");
+
+    let conn = pool.get()?;
+
+    db::insert_payment(&conn, payment)?;
+
+    Ok(())
+}
+
 pub type Sender = mpsc::UnboundedSender<Payment>;
 type Receiver = mpsc::UnboundedReceiver<Payment>;
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessorPayment {
+    pub requested_at: DateTime<Utc>,
+    pub amount: f32,
+    pub correlation_id: String,
+}

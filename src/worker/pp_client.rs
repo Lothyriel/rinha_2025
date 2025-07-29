@@ -1,36 +1,21 @@
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, Utc};
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
 use reqwest::{Client, StatusCode};
 
-use crate::{db, worker::Payment};
+use crate::worker::{Payment, ProcessorPayment};
 
-#[tracing::instrument]
-pub async fn handle(
-    pool: Pool<SqliteConnectionManager>,
-    client: &Client,
-    payment: Payment,
-) -> Result<()> {
-    let now = Utc::now();
+#[tracing::instrument(skip_all)]
+pub async fn create(client: &Client, payment: ProcessorPayment) -> Payment {
+    let processor_id = send_to_processor(client, &payment).await;
 
-    let amount = payment.amount;
+    let amount = payment.amount * 100.0;
 
-    let payment = ProcessorPayment {
-        requested_at: now,
-        amount: amount as f32 / 100.0,
-        correlation_id: payment.correlation_id,
-    };
-
-    let processor_id = process(client, &payment).await;
-
-    let conn = pool.get()?;
-
-    db::insert_payment(&conn, now.timestamp_millis(), amount, processor_id)?;
-
-    Ok(())
+    Payment {
+        amount: amount as u64,
+        requested_at: payment.requested_at.timestamp_millis(),
+        processor_id,
+    }
 }
 
 const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
@@ -39,7 +24,7 @@ const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
 ];
 
 #[tracing::instrument(skip_all)]
-async fn process(client: &Client, payment: &ProcessorPayment) -> u8 {
+async fn send_to_processor(client: &Client, payment: &ProcessorPayment) -> u8 {
     //todo: this needs to be handled way better
     //todo: map and use the GET /payments/service-health
 
@@ -77,12 +62,4 @@ async fn send(uri: &str, client: &Client, payment: &ProcessorPayment) -> Result<
         StatusCode::OK => Ok(()),
         _ => Err(anyhow!("{status}")),
     }
-}
-
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ProcessorPayment {
-    requested_at: DateTime<Utc>,
-    amount: f32,
-    correlation_id: String,
 }

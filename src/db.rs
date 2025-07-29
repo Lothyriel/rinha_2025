@@ -3,10 +3,12 @@ use std::time::Duration;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, OpenFlags, Result, params};
 
+use crate::worker::Payment;
+
 const DB_FILE: &str = "./data/rinha.db";
 const MMAP_SIZE: &str = "67108864";
 
-type Pool = r2d2::Pool<SqliteConnectionManager>;
+pub type Pool = r2d2::Pool<SqliteConnectionManager>;
 
 pub fn write_pool() -> Result<Pool, r2d2::Error> {
     let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
@@ -54,10 +56,10 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn insert_payment(conn: &Connection, requested_at: i64, amount: u64, id: u8) -> Result<()> {
+pub fn insert_payment(conn: &Connection, p: Payment) -> Result<()> {
     conn.execute(
         "INSERT INTO payments (requested_at, amount, processor_id) VALUES (?, ?, ?)",
-        params![requested_at, amount, id],
+        params![p.requested_at, p.amount, p.processor_id],
     )?;
 
     Ok(())

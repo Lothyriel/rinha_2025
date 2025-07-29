@@ -1,7 +1,15 @@
 use anyhow::Result;
+use chrono::Utc;
+use reqwest::Client;
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats};
 
-use crate::worker::{Payment, Sender};
+use crate::{
+    api::PaymentRequest,
+    worker::{
+        ProcessorPayment, Sender,
+        pp_client::{self},
+    },
+};
 
 pub async fn client(addr: &str) -> Result<PaymentServiceClient> {
     let transport = tcp::connect(addr, formats::Bincode::default);
@@ -13,19 +21,30 @@ pub async fn client(addr: &str) -> Result<PaymentServiceClient> {
 
 #[tarpc::service]
 pub trait PaymentService {
-    async fn process(payment: Payment);
+    async fn process(payment: PaymentRequest);
 }
 
 #[derive(Clone, Debug)]
-pub struct PaymentWorker(pub Sender);
+pub struct PaymentWorker {
+    pub sender: Sender,
+    pub client: Client,
+}
 
 impl PaymentService for PaymentWorker {
     #[tracing::instrument(skip_all)]
-    async fn process(self, _: context::Context, payment: Payment) {
+    async fn process(self, _: context::Context, payment: PaymentRequest) {
         tracing::info!(payment.correlation_id, "rpc_recv");
-        tracing::info!(payment.correlation_id, "mpsc_send");
 
-        self.0
+        let payment = ProcessorPayment {
+            requested_at: Utc::now(),
+            amount: payment.amount,
+            correlation_id: payment.correlation_id,
+        };
+
+        let payment = pp_client::create(&self.client, payment).await;
+
+        tracing::info!("mpsc_send");
+        self.sender
             .send(payment)
             .expect("Consumer should not have dropped")
     }
