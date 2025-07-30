@@ -2,15 +2,15 @@ services:
   api_0: &api
     image: localhost/rinha
     volumes:
-      - uds:/var/run
-    command: ["-m", "api", "-a", "YWRtaW5AYWRtaW4uY29tOmpMQUQ5NEJ1dml6VENUY0c="]
+      - uds:/socket
+    command: ["-m", "api"]
     depends_on:
       - worker
     deploy:
       resources:
         limits:
-          cpus: "0.3"
-          memory: "50MB"
+          cpus: "0.2"
+          memory: "30MB"
 
   api_1:
     <<: *api
@@ -20,16 +20,17 @@ services:
     networks:
       - payment-processor
     volumes:
-      - uds:/var/run
-    command:
-      ["-m", "worker", "-a", "YWRtaW5AYWRtaW4uY29tOmpMQUQ5NEJ1dml6VENUY0c="]
-    depends_on:
-      - openobserve
+      - uds:/socket
+    command: ["-m", "worker"]
+    ulimits:
+      nofile:
+        soft: 16384
+        hard: 16384
     deploy:
       resources:
         limits:
-          cpus: "0.6"
-          memory: "220MB"
+          cpus: "0.8"
+          memory: "260MB"
 
   nginx:
     image: nginx:latest
@@ -46,20 +47,8 @@ services:
           cpus: "0.3"
           memory: "30MB"
 
-  openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:latest
-    restart: unless-stopped
-    environment:
-      ZO_ROOT_USER_EMAIL: "admin@admin.com"
-      ZO_ROOT_USER_PASSWORD: "admin"
-    ports:
-      - "5080:5080"
-    volumes:
-      - openobserve:/data
-
 volumes:
   uds:
-  openobserve:
 
 networks:
   payment-processor:
