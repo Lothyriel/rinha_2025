@@ -22,7 +22,7 @@ pub async fn process(sender: Sender, client: Client, payment: payment::Request) 
 
     let payment = Payment {
         amount: amount as u64,
-        requested_at: payment.requested_at.timestamp_millis(),
+        requested_at: payment.requested_at.timestamp_micros(),
         processor_id,
     };
 

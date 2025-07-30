@@ -21,7 +21,7 @@ pub struct SummaryQuery {
 #[tracing::instrument(skip_all)]
 pub async fn get(OptionalQuery(query): OptionalQuery<SummaryQuery>) -> Json<Summary> {
     let query = if let Some(query) = query {
-        (query.from.timestamp_millis(), query.to.timestamp_millis())
+        (query.from.timestamp_micros(), query.to.timestamp_micros())
     } else {
         (0, i64::MAX)
     };
