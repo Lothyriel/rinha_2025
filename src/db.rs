@@ -1,6 +1,3 @@
-use std::time::Duration;
-
-use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, OpenFlags, Result, params};
 
 use crate::data::Payment;
@@ -8,39 +5,32 @@ use crate::data::Payment;
 const DB_FILE: &str = "./rinha.db";
 const MMAP_SIZE: &str = "67108864";
 
-pub type Pool = r2d2::Pool<SqliteConnectionManager>;
-
-pub fn write_pool() -> Result<Pool, r2d2::Error> {
+fn writer() -> Result<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
 
-    init_pool(1, flags)
+    get_conn(flags)
 }
 
-pub fn read_pool() -> Result<Pool, r2d2::Error> {
-    init_pool(5, OpenFlags::SQLITE_OPEN_READ_ONLY)
+fn reader() -> Result<Connection> {
+    get_conn(OpenFlags::SQLITE_OPEN_READ_ONLY)
 }
 
-fn init_pool(max: u32, flags: OpenFlags) -> Result<Pool, r2d2::Error> {
-    let manager = SqliteConnectionManager::file(DB_FILE)
-        .with_flags(flags)
-        .with_init(|conn| {
-            conn.pragma_update(None, "cache", "shared")?;
-            conn.pragma_update(None, "journal_mode", "WAL")?;
-            conn.pragma_update(None, "synchronous", "NORMAL")?;
-            conn.pragma_update(None, "temp_store", "memory")?;
-            conn.pragma_update(None, "foreign_keys", "false")?;
-            conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
+fn get_conn(flags: OpenFlags) -> Result<Connection> {
+    let conn = rusqlite::Connection::open_with_flags(DB_FILE, flags)?;
 
-            Ok(())
-        });
+    conn.pragma_update(None, "cache", "shared")?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    conn.pragma_update(None, "temp_store", "memory")?;
+    conn.pragma_update(None, "foreign_keys", "false")?;
+    conn.pragma_update(None, "mmap_size", MMAP_SIZE)?;
 
-    Pool::builder()
-        .connection_timeout(Duration::from_secs(1))
-        .max_size(max)
-        .build(manager)
+    Ok(conn)
 }
 
-pub fn init_db(conn: &Connection) -> Result<()> {
+pub fn init_db() -> Result<()> {
+    let conn = writer()?;
+
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS payments (
@@ -56,7 +46,9 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn insert_payment(conn: &Connection, p: Payment) -> Result<()> {
+pub fn insert_payment(p: Payment) -> Result<()> {
+    let conn = writer()?;
+
     conn.execute(
         "INSERT INTO payments (requested_at, amount, processor_id) VALUES (?, ?, ?)",
         params![p.requested_at, p.amount, p.processor_id],
@@ -66,9 +58,12 @@ pub fn insert_payment(conn: &Connection, p: Payment) -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<PaymentDto>> {
-    let mut stmt = conn
-        .prepare("SELECT processor_id, amount FROM payments WHERE requested_at BETWEEN ? AND ?;")?;
+pub fn get_payments((from, to): (i64, i64)) -> Result<Vec<PaymentDto>> {
+    let conn = reader()?;
+
+    let mut stmt = conn.prepare_cached(
+        "SELECT processor_id, amount FROM payments WHERE requested_at BETWEEN ? AND ?;",
+    )?;
 
     let query_map = stmt.query_map(params![from, to], |row| {
         Ok(PaymentDto {
@@ -80,8 +75,8 @@ pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<Pay
     query_map.collect()
 }
 
-pub fn purge(conn: &Connection) -> Result<()> {
-    conn.execute_batch("DELETE FROM payments;")
+pub fn purge() -> Result<()> {
+    writer()?.execute_batch("DELETE FROM payments;")
 }
 
 pub struct PaymentDto {

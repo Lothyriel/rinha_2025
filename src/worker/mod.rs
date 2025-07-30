@@ -16,25 +16,21 @@ use crate::{api, data, db};
 pub async fn serve() -> Result<()> {
     tracing::info!("Starting worker");
 
-    let write = db::write_pool()?;
-    {
-        let conn = write.get()?;
-        db::init_db(&conn)?;
-    }
+    db::init_db()?;
 
-    let sender = start_consumer(write);
+    let sender = start_consumer();
 
     uds_listen(sender).await
 }
 
-fn start_consumer(write: db::Pool) -> Sender {
+fn start_consumer() -> Sender {
     let (tx, mut rx): (Sender, Receiver) = mpsc::unbounded_channel();
 
     tracing::info!("Starting mpsc consumer");
 
     tokio::spawn(async move {
         while let Some(payment) = rx.recv().await {
-            let result = handle_mpsc(payment, write.clone()).await;
+            let result = handle_mpsc(payment).await;
 
             if let Err(er) = result {
                 tracing::error!(?er, "mpsc_err");
@@ -52,18 +48,16 @@ async fn uds_listen(sender: Sender) -> Result<()> {
     let listener = UnixListener::bind(UDS_PATH)?;
     tracing::info!("listening on {}", UDS_PATH);
 
-    let pool = db::read_pool()?;
     let client = Client::new();
 
     loop {
         let sender = sender.clone();
         let client = client.clone();
-        let pool = pool.clone();
 
         let (socket, _) = listener.accept().await?;
 
         tokio::spawn(async {
-            if let Err(err) = handle_uds(sender, client, pool, socket).await {
+            if let Err(err) = handle_uds(sender, client, socket).await {
                 tracing::error!(err = ?err, "handle_uds");
             }
         });
@@ -71,18 +65,13 @@ async fn uds_listen(sender: Sender) -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-async fn handle_uds(
-    sender: Sender,
-    client: Client,
-    pool: db::Pool,
-    mut socket: UnixStream,
-) -> Result<()> {
+async fn handle_uds(sender: Sender, client: Client, mut socket: UnixStream) -> Result<()> {
     let mut buf = [0u8; 64];
 
     let n = socket.read(&mut buf).await?;
 
     match data::decode(&buf[..n]) {
-        WorkerRequest::Summary(query) => summary::process(pool, socket, buf, query).await?,
+        WorkerRequest::Summary(query) => summary::process(socket, buf, query).await?,
         WorkerRequest::Payment(req) => payment::process(sender, client, req).await,
         WorkerRequest::PurgeDb => purge_db()?,
     }
@@ -91,11 +80,7 @@ async fn handle_uds(
 }
 
 fn purge_db() -> Result<()> {
-    let pool = db::write_pool()?;
-
-    let conn = pool.get()?;
-
-    db::purge(&conn)?;
+    db::purge()?;
 
     tracing::info!("DB purged");
 
@@ -103,12 +88,10 @@ fn purge_db() -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-async fn handle_mpsc(payment: data::Payment, pool: db::Pool) -> Result<()> {
+async fn handle_mpsc(payment: data::Payment) -> Result<()> {
     tracing::info!("mpsc_recv");
 
-    let conn = pool.get()?;
-
-    db::insert_payment(&conn, payment)?;
+    db::insert_payment(payment)?;
 
     Ok(())
 }

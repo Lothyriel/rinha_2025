@@ -3,13 +3,8 @@ use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 use crate::{api::summary::Summary, data, db};
 
-pub async fn process(
-    pool: db::Pool,
-    mut socket: UnixStream,
-    mut buf: [u8; 64],
-    query: (i64, i64),
-) -> Result<()> {
-    let summary = get(pool, query)?;
+pub async fn process(mut socket: UnixStream, mut buf: [u8; 64], query: (i64, i64)) -> Result<()> {
+    let summary = get(query)?;
 
     let n = data::encode(summary, &mut buf);
 
@@ -19,10 +14,8 @@ pub async fn process(
 }
 
 #[tracing::instrument(skip_all)]
-fn get(pool: db::Pool, query: (i64, i64)) -> Result<Summary> {
-    let conn = pool.get()?;
-
-    let payments = db::get_payments(&conn, query)?;
+fn get(query: (i64, i64)) -> Result<Summary> {
+    let payments = db::get_payments(query)?;
 
     let summary = payments.iter().fold([(0, 0), (0, 0)], |mut acc, p| {
         match p.processor_id {
