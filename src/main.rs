@@ -3,15 +3,9 @@ mod data;
 mod db;
 mod worker;
 
-use std::collections::HashMap;
-
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use opentelemetry::trace::TracerProvider;
-use opentelemetry_otlp::{SpanExporter, WithExportConfig, WithHttpConfig};
-use opentelemetry_sdk::trace::SdkTracerProvider;
 use tokio::signal::unix::SignalKind;
-use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{
     EnvFilter,
     fmt::{format::FmtSpan, layer},
@@ -24,7 +18,7 @@ use tracing_subscriber::{
 async fn main() {
     let args = Args::parse();
 
-    init_tracing(&args).expect("Configure tracing");
+    init_tracing().expect("Configure tracing");
 
     tokio::select! {
         _ = serve(args) => {},
@@ -33,9 +27,9 @@ async fn main() {
     }
 }
 
-fn init_tracing(args: &Args) -> Result<()> {
+fn init_tracing() -> Result<()> {
     let filter =
-        EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info,tarpc=warn"))?;
+        EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("warn,tarpc=warn"))?;
 
     let fmt = layer()
         .json()
@@ -47,32 +41,7 @@ fn init_tracing(args: &Args) -> Result<()> {
         .with_current_span(true)
         .with_span_events(FmtSpan::CLOSE);
 
-    let oo_addr = args.oo_addr.as_deref().unwrap_or("http://openobserve:5080");
-    let oo_auth = format!("Basic {}", args.oo_auth);
-
-    let headers = HashMap::from([
-        ("authorization".to_string(), oo_auth),
-        ("stream-name".to_string(), "default".to_string()),
-        ("organization".to_string(), "default".to_string()),
-    ]);
-
-    let exporter = SpanExporter::builder()
-        .with_http()
-        .with_endpoint(format!("{oo_addr}/api/default/v1/traces"))
-        .with_headers(headers)
-        .build()?;
-
-    let provider = SdkTracerProvider::builder()
-        .with_batch_exporter(exporter)
-        .build();
-
-    let otel_layer = OpenTelemetryLayer::new(provider.tracer("rinha"));
-
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(fmt)
-        .with(otel_layer)
-        .init();
+    tracing_subscriber::registry().with(filter).with(fmt).init();
 
     Ok(())
 }
@@ -107,8 +76,4 @@ struct Args {
     port: u16,
     #[arg(short = 'm', value_parser = ["api", "worker"], help = "The mode in which the binary will run")]
     mode: String,
-    #[arg(short = 'o', help = "The address of openobserve")]
-    oo_addr: Option<String>,
-    #[arg(short = 'a', help = "Basic token for authorization in openobserve")]
-    oo_auth: String,
 }
