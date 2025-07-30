@@ -28,7 +28,7 @@ async fn send(payment: Request) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
     pub correlation_id: String,

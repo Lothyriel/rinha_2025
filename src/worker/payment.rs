@@ -1,34 +1,23 @@
-use chrono::Utc;
+use anyhow::Result;
 use reqwest::Client;
 
 use crate::{
     api::payment,
-    data::{Payment, ProcessorPaymentRequest},
-    worker::{Sender, pp_client},
+    worker::{PaymentTx, pp_client},
 };
 
-pub async fn process(sender: Sender, client: Client, payment: payment::Request) {
+pub async fn process(
+    payment_tx: PaymentTx,
+    client: Client,
+    payment: payment::Request,
+) -> Result<()> {
     tracing::info!(payment.correlation_id, "rpc_recv");
 
-    let payment = ProcessorPaymentRequest {
-        requested_at: Utc::now(),
-        amount: payment.amount,
-        correlation_id: payment.correlation_id,
-    };
+    let payment = pp_client::send(&client, payment).await?;
 
-    let processor_id = pp_client::send(&client, &payment).await;
+    tracing::info!("crossbeam_send");
 
-    let amount = payment.amount * 100.0;
+    payment_tx.send(payment)?;
 
-    let payment = Payment {
-        amount: amount as u64,
-        requested_at: payment.requested_at.timestamp_micros(),
-        processor_id,
-    };
-
-    tracing::info!("mpsc_send");
-
-    sender
-        .send(payment)
-        .expect("Consumer should not have dropped")
+    Ok(())
 }

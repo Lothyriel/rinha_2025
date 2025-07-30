@@ -1,9 +1,11 @@
-use std::time::Duration;
-
 use anyhow::{Result, anyhow};
+use chrono::Utc;
 use reqwest::{Client, StatusCode};
 
-use crate::data::ProcessorPaymentRequest;
+use crate::{
+    api::payment,
+    data::{Payment, ProcessorPaymentRequest},
+};
 
 const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
     (1, "http://payment-processor-default:8080"),
@@ -11,26 +13,32 @@ const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
 ];
 
 #[tracing::instrument(skip_all)]
-pub async fn send(client: &Client, payment: &ProcessorPaymentRequest) -> u8 {
+pub async fn send(client: &Client, payment: payment::Request) -> Result<Payment> {
     //todo: this needs to be handled way better
     //todo: map and use the GET /payments/service-health
 
-    loop {
-        for (id, uri) in PAYMENT_PROCESSORS {
-            for i in 0..5 {
-                tracing::info!(pp_id = id, retry = i, "sending to payment-processor");
-                let result = http_send(uri, client, payment).await;
+    let payment = ProcessorPaymentRequest {
+        requested_at: Utc::now(),
+        amount: payment.amount,
+        correlation_id: payment.correlation_id,
+    };
 
-                match result {
-                    Ok(_) => return id,
-                    Err(err) => {
-                        tracing::info!(?err, "pp_payments_err");
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                    }
-                }
-            }
-        }
-    }
+    //for (id, uri) in PAYMENT_PROCESSORS {
+    let (id, uri) = PAYMENT_PROCESSORS[0];
+
+    tracing::info!(pp_id = id, "sending to payment-processor");
+
+    http_send(uri, client, &payment).await?;
+
+    let amount = payment.amount * 100.0;
+
+    let payment = Payment {
+        amount: amount as u64,
+        requested_at: payment.requested_at.timestamp_micros(),
+        processor_id: id,
+    };
+
+    Ok(payment)
 }
 
 #[tracing::instrument(skip_all)]
