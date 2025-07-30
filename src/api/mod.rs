@@ -6,10 +6,11 @@ use std::{net::Ipv4Addr, time::Duration};
 
 use anyhow::Result;
 use axum::{Router, http::Request, routing};
+use tokio::net::{TcpListener, UnixListener};
 
 #[tracing::instrument(skip_all)]
-pub async fn serve(port: u16) -> Result<()> {
-    tracing::info!("Starting API on port {port}");
+pub async fn serve() -> Result<()> {
+    tracing::info!("Starting API");
 
     let layer = tower_http::trace::TraceLayer::new_for_http()
         .make_span_with(|request: &Request<_>| {
@@ -35,9 +36,19 @@ pub async fn serve(port: u16) -> Result<()> {
         .route("/purge-payments", routing::post(util::purge_db))
         .layer(layer);
 
-    let addr = (Ipv4Addr::UNSPECIFIED, port);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    match std::env::var("NGINX_SOCKET").ok() {
+        Some(f) => {
+            std::fs::remove_file(&f).ok();
+            tracing::info!("Binding to unix socket on {f}");
+            let socket = UnixListener::bind(f)?;
+
+            axum::serve(socket, app).await?
+        }
+        None => {
+            let socket = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 8080)).await?;
+            axum::serve(socket, app).await?;
+        }
+    };
 
     Ok(())
 }

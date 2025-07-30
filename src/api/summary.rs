@@ -7,10 +7,7 @@ use tokio::{
     net::UnixStream,
 };
 
-use crate::{
-    data,
-    worker::{UDS_PATH, WorkerRequest},
-};
+use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
 
 #[derive(serde::Deserialize)]
 pub struct SummaryQuery {
@@ -32,7 +29,7 @@ pub async fn get(OptionalQuery(query): OptionalQuery<SummaryQuery>) -> Json<Summ
 }
 
 async fn get_summary(query: (i64, i64)) -> Result<Summary> {
-    let mut socket = UnixStream::connect(UDS_PATH).await?;
+    let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
 
     let mut buf = [0u8; 32];
     let n = data::encode(WorkerRequest::Summary(query), &mut buf);

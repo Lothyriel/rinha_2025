@@ -5,6 +5,7 @@ mod worker;
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
+use once_cell::sync::Lazy;
 use tokio::signal::unix::SignalKind;
 use tracing_subscriber::{
     EnvFilter,
@@ -16,20 +17,20 @@ use tracing_subscriber::{
 #[tokio::main]
 #[tracing::instrument(skip_all)]
 async fn main() {
-    let args = Args::parse();
-
     init_tracing().expect("Configure tracing");
 
     tokio::select! {
-        _ = serve(args) => {},
+        _ = serve(Args::parse()) => {},
         _ = signal(SignalKind::interrupt()) => {},
         _ = signal(SignalKind::terminate()) => {},
     }
 }
 
 fn init_tracing() -> Result<()> {
+    dotenvy::dotenv().ok();
+
     let filter =
-        EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("warn,tarpc=warn"))?;
+        EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info,tarpc=warn"))?;
 
     let fmt = layer()
         .json()
@@ -39,7 +40,7 @@ fn init_tracing() -> Result<()> {
         .with_thread_ids(true)
         .with_level(true)
         .with_current_span(true)
-        .with_span_events(FmtSpan::FULL);
+        .with_span_events(FmtSpan::CLOSE);
 
     tracing_subscriber::registry().with(filter).with(fmt).init();
 
@@ -55,7 +56,7 @@ async fn signal(kind: SignalKind) {
 
 async fn serve(args: Args) {
     let result = match args.mode.as_str() {
-        "api" => api::serve(args.port).await,
+        "api" => api::serve().await,
         "worker" => worker::serve().await,
         _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
     };
@@ -68,12 +69,9 @@ async fn serve(args: Args) {
 #[derive(Parser)]
 #[command(about = "Rinha 2025")]
 struct Args {
-    #[arg(
-        short = 'p',
-        default_value_t = 80,
-        help = "The port in which the api will bind"
-    )]
-    port: u16,
     #[arg(short = 'm', value_parser = ["api", "worker"], help = "The mode in which the binary will run")]
     mode: String,
 }
+
+pub static WORKER_SOCKET: Lazy<String> =
+    Lazy::new(|| std::env::var("WORKER_SOCKET").unwrap_or("/var/run/rinha.sock".to_string()));

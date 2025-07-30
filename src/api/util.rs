@@ -2,10 +2,7 @@ use anyhow::Result;
 use axum::http::StatusCode;
 use tokio::{io::AsyncWriteExt, net::UnixStream};
 
-use crate::{
-    data,
-    worker::{UDS_PATH, WorkerRequest},
-};
+use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
 
 #[tracing::instrument(skip_all)]
 pub async fn purge_db() -> StatusCode {
@@ -16,7 +13,7 @@ pub async fn purge_db() -> StatusCode {
 
 #[tracing::instrument(skip_all)]
 async fn purge() -> Result<()> {
-    let mut socket = UnixStream::connect(UDS_PATH).await?;
+    let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
 
     let mut buf = [0u8; 32];
     let n = data::encode(WorkerRequest::PurgeDb, &mut buf);

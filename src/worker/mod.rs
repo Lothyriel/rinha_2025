@@ -9,7 +9,7 @@ use tokio::{
     net::{UnixListener, UnixStream},
 };
 
-use crate::{api, data, db};
+use crate::{WORKER_SOCKET, api, data, db};
 
 #[tracing::instrument(skip_all)]
 pub async fn serve() -> Result<()> {
@@ -27,11 +27,11 @@ pub async fn serve() -> Result<()> {
 fn start_db_consumer() -> PaymentTx {
     let (tx, rx) = crossbeam::channel::unbounded();
 
-    tracing::info!("Starting crossbeam consumer");
+    tracing::info!("Starting db_consumer");
 
     tokio::spawn(async move {
-        if let Err(err) = handle_completed_payment(rx).await {
-            tracing::error!(?err, "crossbeam_err");
+        if let Err(err) = handle_completed_payments(rx).await {
+            tracing::error!(?err, "db_consumer_err");
         }
     });
 
@@ -41,7 +41,7 @@ fn start_db_consumer() -> PaymentTx {
 fn start_payments_request_consumer(payment_tx: PaymentTx) -> RequestTx {
     let (tx, rx): (RequestTx, _) = crossbeam::channel::unbounded();
 
-    tracing::info!("Starting payments_request consumer");
+    tracing::info!("Starting payments_req_consumer");
     let client = Client::new();
 
     const HTTP_WORKERS: usize = 8;
@@ -71,7 +71,7 @@ fn start_payments_request_consumer(payment_tx: PaymentTx) -> RequestTx {
 }
 
 #[tracing::instrument(skip_all)]
-async fn handle_completed_payment(rx: PaymentRx) -> Result<()> {
+async fn handle_completed_payments(rx: PaymentRx) -> Result<()> {
     const BATCH_SIZE: usize = 100;
     let mut buffer = Vec::with_capacity(BATCH_SIZE);
 
@@ -91,12 +91,10 @@ async fn handle_completed_payment(rx: PaymentRx) -> Result<()> {
     }
 }
 
-pub const UDS_PATH: &str = "/var/run/rinha.sock";
-
 async fn uds_listen(tx: RequestTx) -> Result<()> {
-    std::fs::remove_file(UDS_PATH).ok();
-    let listener = UnixListener::bind(UDS_PATH)?;
-    tracing::info!("listening on {}", UDS_PATH);
+    std::fs::remove_file(&*WORKER_SOCKET).ok();
+    let listener = UnixListener::bind(&*WORKER_SOCKET)?;
+    tracing::info!("listening on {}", &*WORKER_SOCKET);
 
     loop {
         let (socket, _) = listener.accept().await?;
@@ -116,7 +114,9 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream) -> Result<()> {
 
     let n = socket.read(&mut buf).await?;
 
-    match data::decode(&buf[..n]) {
+    let req = data::decode(&buf[..n]);
+
+    match req {
         WorkerRequest::Summary(query) => summary::process(socket, buf, query).await?,
         WorkerRequest::Payment(req) => tx.send(req)?,
         WorkerRequest::PurgeDb => purge_db()?,
