@@ -24,8 +24,8 @@ pub async fn send(client: &Client, payment: &ProcessorPaymentRequest) -> u8 {
                 match result {
                     Ok(_) => return id,
                     Err(err) => {
-                        tracing::warn!(?err, "pp_payments_err");
-                        tokio::time::sleep(Duration::from_millis(200)).await;
+                        tracing::info!(?err, "pp_payments_err");
+                        tokio::time::sleep(Duration::from_millis(100)).await;
                     }
                 }
             }
