@@ -39,7 +39,7 @@ fn init_tracing() -> Result<()> {
         .with_thread_ids(true)
         .with_level(true)
         .with_current_span(true)
-        .with_span_events(FmtSpan::CLOSE);
+        .with_span_events(FmtSpan::FULL);
 
     tracing_subscriber::registry().with(filter).with(fmt).init();
 

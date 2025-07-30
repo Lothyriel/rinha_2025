@@ -2,7 +2,7 @@ services:
   api_0: &api
     image: localhost/rinha
     volumes:
-      - uds:/socket
+      - uds:/var/run
     command: ["-m", "api"]
     depends_on:
       - worker
@@ -20,7 +20,7 @@ services:
     networks:
       - payment-processor
     volumes:
-      - uds:/socket
+      - uds:/var/run
     command: ["-m", "worker"]
     ulimits:
       nofile:

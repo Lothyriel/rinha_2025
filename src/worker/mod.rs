@@ -28,10 +28,17 @@ fn start_consumer() -> Sender {
 
     tracing::info!("Starting mpsc consumer");
 
-    tokio::spawn(async move {
-        while let Some(payment) = rx.recv().await {
-            let result = handle_mpsc(payment).await;
+    const BATCH_SIZE: usize = 100;
 
+    let mut buffer = Vec::with_capacity(BATCH_SIZE);
+
+    tokio::spawn(async move {
+        loop {
+            rx.recv_many(&mut buffer, BATCH_SIZE).await;
+
+            let result = handle_mpsc(&buffer).await;
+
+            buffer.clear();
             if let Err(er) = result {
                 tracing::error!(?er, "mpsc_err");
             }
@@ -88,10 +95,10 @@ fn purge_db() -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-async fn handle_mpsc(payment: data::Payment) -> Result<()> {
+async fn handle_mpsc(payments: &[data::Payment]) -> Result<()> {
     tracing::info!("mpsc_recv");
 
-    db::insert_payment(payment)?;
+    db::insert_payment(payments)?;
 
     Ok(())
 }
