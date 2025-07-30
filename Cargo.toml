@@ -8,6 +8,8 @@ anyhow = "1.0.98"
 
 clap = { version = "4.5.41", features = ["derive"] }
 
+crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
+
 axum = "0.8.4"
 axum-extra = { version = "0.10.1", features = ["query"] }
 
