@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use chrono::Utc;
+use once_cell::sync::Lazy;
 use reqwest::{Client, StatusCode};
 
 use crate::{
@@ -7,10 +8,15 @@ use crate::{
     data::{Payment, ProcessorPaymentRequest},
 };
 
-const PAYMENT_PROCESSORS: [(u8, &str); 2] = [
-    (1, "http://payment-processor-default:8080"),
-    (2, "http://payment-processor-fallback:8080"),
-];
+pub static PAYMENT_PROCESSORS: Lazy<[(u8, String); 2]> = Lazy::new(|| {
+    let default = std::env::var("PROCESSOR_DEFAULT")
+        .unwrap_or("http://payment-processor-default:8080".to_string());
+
+    let fallback = std::env::var("PROCESSOR_FALLBACK")
+        .unwrap_or("http://payment-processor-fallback:8080".to_string());
+
+    [(1, default), (2, fallback)]
+});
 
 #[tracing::instrument(skip_all)]
 pub async fn send(client: &Client, payment: payment::Request) -> Result<Payment> {
@@ -24,7 +30,7 @@ pub async fn send(client: &Client, payment: payment::Request) -> Result<Payment>
     };
 
     //for (id, uri) in PAYMENT_PROCESSORS {
-    let (id, uri) = PAYMENT_PROCESSORS[0];
+    let (id, uri) = &(*PAYMENT_PROCESSORS)[0];
 
     tracing::info!(pp_id = id, "sending to payment-processor");
 
@@ -35,7 +41,7 @@ pub async fn send(client: &Client, payment: payment::Request) -> Result<Payment>
     let payment = Payment {
         amount: amount as u64,
         requested_at: payment.requested_at.timestamp_micros(),
-        processor_id: id,
+        processor_id: *id,
     };
 
     Ok(payment)
