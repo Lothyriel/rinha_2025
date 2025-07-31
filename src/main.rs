@@ -29,8 +29,7 @@ async fn main() {
 fn init_tracing() -> Result<()> {
     dotenvy::dotenv().ok();
 
-    let filter =
-        EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info,tarpc=warn"))?;
+    let filter = EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info"))?;
 
     let fmt = layer()
         .json()
