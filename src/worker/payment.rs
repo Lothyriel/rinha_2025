@@ -11,8 +11,6 @@ pub async fn process(
     client: Client,
     payment: payment::Request,
 ) -> Result<()> {
-    tracing::info!(payment.correlation_id, "rpc_recv");
-
     let payment = pp_client::send(&client, payment).await?;
 
     tracing::info!("crossbeam_send");

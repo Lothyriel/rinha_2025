@@ -2,12 +2,13 @@ services:
   api_0: &api
     image: localhost/rinha
     volumes:
-      - uds:/var/run
+      - uds:/uds
     command: ["-m", "api"]
     depends_on:
       - worker
     environment:
-      - NGINX_SOCKET="/var/run/api_0.sock"
+      NGINX_SOCKET: "/uds/api_0.sock"
+      RUST_LOG: "debug,tarpc=warn"
     deploy:
       resources:
         limits:
@@ -17,15 +18,18 @@ services:
   api_1:
     <<: *api
     environment:
-      - NGINX_SOCKET="/var/run/api_1.sock"
+      NGINX_SOCKET: "/uds/api_1.sock"
+      RUST_LOG: "debug,tarpc=warn"
 
   worker:
     image: localhost/rinha
     networks:
       - payment-processor
     volumes:
-      - uds:/var/run
+      - uds:/uds
     command: ["-m", "worker"]
+    environment:
+      RUST_LOG: "debug,tarpc=warn"
     ulimits:
       nofile:
         soft: 16384
@@ -41,7 +45,7 @@ services:
     ports:
       - "9999:80"
     volumes:
-      - uds:/var/run
+      - uds:/uds
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - api_0

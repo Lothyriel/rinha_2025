@@ -19,7 +19,7 @@ pub async fn serve() -> Result<()> {
 
     let db_tx = start_db_consumer();
 
-    let req_tx = start_payments_request_consumer(db_tx);
+    let req_tx = start_http_workers(db_tx);
 
     uds_listen(req_tx).await
 }
@@ -38,36 +38,81 @@ fn start_db_consumer() -> PaymentTx {
     tx
 }
 
-fn start_payments_request_consumer(payment_tx: PaymentTx) -> RequestTx {
-    let (tx, rx): (RequestTx, _) = crossbeam::channel::unbounded();
+fn start_http_workers(payment_tx: PaymentTx) -> RequestTx {
+    let (tx, rx) = crossbeam::channel::unbounded();
 
-    tracing::info!("Starting payments_req_consumer");
+    tracing::info!("Starting payment_req_consumer");
     let client = Client::new();
 
+    // maybe tweak this value?
     const HTTP_WORKERS: usize = 8;
 
-    // maybe tweak this value?
     for _ in 0..HTTP_WORKERS {
-        let client = client.clone();
-        let payment_tx = payment_tx.clone();
-        let rx = rx.clone();
-        let tx = tx.clone();
-
-        tokio::spawn(async move {
-            match rx.recv() {
-                Ok(req) => {
-                    let result = payment::process(payment_tx, client, req.clone()).await;
-
-                    if result.is_err() {
-                        tx.send(req).expect("requeue request");
-                    }
-                }
-                Err(err) => tracing::error!(?err, "crossbeam_err"),
-            }
-        });
+        let worker = start_http_worker(payment_tx.clone(), tx.clone(), rx.clone(), client.clone());
+        tokio::spawn(worker);
     }
 
     tx
+}
+
+async fn start_http_worker(payment_tx: PaymentTx, tx: RequestTx, rx: RequestRx, client: Client) {
+    loop {
+        let client = client.clone();
+        let payment_tx = payment_tx.clone();
+
+        match rx.recv() {
+            Ok(req) => {
+                let result = payment::process(payment_tx, client, req.clone()).await;
+
+                if result.is_err() {
+                    tx.send(req).expect("requeueing request");
+                }
+            }
+            Err(err) => tracing::error!(?err, "http_worker_err"),
+        }
+    }
+}
+
+async fn uds_listen(tx: RequestTx) -> Result<()> {
+    std::fs::remove_file(&*WORKER_SOCKET).ok();
+    let listener = UnixListener::bind(&*WORKER_SOCKET)?;
+
+    tracing::info!("listening on {}", &*WORKER_SOCKET);
+
+    loop {
+        let tx = tx.clone();
+        let (socket, _) = listener.accept().await?;
+        tracing::debug!("accepted unix socket connection");
+
+        tokio::spawn(async {
+            if let Err(err) = handle_uds(tx, socket).await {
+                tracing::error!(err = ?err, "handle_uds");
+            }
+        });
+    }
+}
+
+#[tracing::instrument(skip_all)]
+async fn handle_uds(tx: RequestTx, mut socket: UnixStream) -> Result<()> {
+    let mut buf = [0u8; 64];
+
+    let n = socket.read(&mut buf).await?;
+
+    let req = data::decode(&buf[..n]);
+
+    match req {
+        WorkerRequest::Summary(query) => {
+            tracing::debug!("handling get_summary");
+            summary::process(socket, buf, query).await?
+        }
+        WorkerRequest::Payment(req) => {
+            tracing::debug!("sending to req_channel");
+            tx.send(req)?
+        }
+        WorkerRequest::PurgeDb => purge_db()?,
+    }
+
+    Ok(())
 }
 
 #[tracing::instrument(skip_all)]
@@ -91,40 +136,6 @@ async fn handle_completed_payments(rx: PaymentRx) -> Result<()> {
     }
 }
 
-async fn uds_listen(tx: RequestTx) -> Result<()> {
-    std::fs::remove_file(&*WORKER_SOCKET).ok();
-    let listener = UnixListener::bind(&*WORKER_SOCKET)?;
-    tracing::info!("listening on {}", &*WORKER_SOCKET);
-
-    loop {
-        let (socket, _) = listener.accept().await?;
-        let tx = tx.clone();
-
-        tokio::spawn(async {
-            if let Err(err) = handle_uds(tx, socket).await {
-                tracing::error!(err = ?err, "handle_uds");
-            }
-        });
-    }
-}
-
-#[tracing::instrument(skip_all)]
-async fn handle_uds(tx: RequestTx, mut socket: UnixStream) -> Result<()> {
-    let mut buf = [0u8; 64];
-
-    let n = socket.read(&mut buf).await?;
-
-    let req = data::decode(&buf[..n]);
-
-    match req {
-        WorkerRequest::Summary(query) => summary::process(socket, buf, query).await?,
-        WorkerRequest::Payment(req) => tx.send(req)?,
-        WorkerRequest::PurgeDb => purge_db()?,
-    }
-
-    Ok(())
-}
-
 fn purge_db() -> Result<()> {
     db::purge()?;
 
@@ -144,3 +155,4 @@ type PaymentTx = crossbeam::channel::Sender<data::Payment>;
 type PaymentRx = crossbeam::channel::Receiver<data::Payment>;
 
 type RequestTx = crossbeam::channel::Sender<api::payment::Request>;
+type RequestRx = crossbeam::channel::Receiver<api::payment::Request>;

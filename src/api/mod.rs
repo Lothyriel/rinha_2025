@@ -2,7 +2,7 @@ pub mod payment;
 pub mod summary;
 mod util;
 
-use std::{net::Ipv4Addr, time::Duration};
+use std::{fs::Permissions, net::Ipv4Addr, os::unix::fs::PermissionsExt, time::Duration};
 
 use anyhow::Result;
 use axum::{Router, http::Request, routing};
@@ -40,12 +40,17 @@ pub async fn serve() -> Result<()> {
         Some(f) => {
             std::fs::remove_file(&f).ok();
             tracing::info!("Binding to unix socket on {f}");
-            let socket = UnixListener::bind(f)?;
+            let socket = UnixListener::bind(&f)?;
+
+            let permissions = Permissions::from_mode(0o666);
+            std::fs::set_permissions(f, permissions)?;
 
             axum::serve(socket, app).await?
         }
         None => {
-            let socket = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 8080)).await?;
+            const PORT: u16 = 9999;
+            let socket = TcpListener::bind((Ipv4Addr::UNSPECIFIED, PORT)).await?;
+            tracing::info!("Binding to network socket on {PORT}");
             axum::serve(socket, app).await?;
         }
     };
