@@ -16,11 +16,10 @@ pub async fn serve() -> Result<()> {
 
     let layer = tower_http::trace::TraceLayer::new_for_http()
         .make_span_with(|request: &Request<_>| {
-            tracing::debug_span!(
+            tracing::info_span!(
                 "http",
                 method = %request.method(),
                 uri = %request.uri(),
-                version = ?request.version(),
             )
         })
         .on_request(|request: &Request<_>, _: &tracing::Span| {
