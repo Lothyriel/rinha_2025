@@ -47,7 +47,7 @@ fn start_http_workers(payment_tx: PaymentTx) -> RequestTx {
     let client = Client::new();
 
     // maybe tweak this value?
-    const HTTP_WORKERS: usize = 8;
+    const HTTP_WORKERS: usize = 4;
 
     for _ in 0..HTTP_WORKERS {
         let worker = start_http_worker(payment_tx.clone(), tx.clone(), rx.clone(), client.clone());
