@@ -3,9 +3,12 @@ mod data;
 mod db;
 mod worker;
 
+use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use once_cell::sync::Lazy;
+use tokio::net::UnixListener;
 use tracing_subscriber::{
     EnvFilter,
     fmt::{format::FmtSpan, layer},
@@ -60,5 +63,16 @@ struct Args {
     mode: String,
 }
 
-pub static WORKER_SOCKET: Lazy<String> =
+static WORKER_SOCKET: Lazy<String> =
     Lazy::new(|| std::env::var("WORKER_SOCKET").unwrap_or("/uds/rinha.sock".to_string()));
+
+fn bind_unix_socket(file: &str) -> Result<UnixListener> {
+    std::fs::remove_file(file).ok();
+
+    let listener = UnixListener::bind(file)?;
+
+    let permissions = Permissions::from_mode(0o666);
+    std::fs::set_permissions(file, permissions)?;
+
+    Ok(listener)
+}

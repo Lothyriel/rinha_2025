@@ -4,12 +4,9 @@ mod summary;
 
 use anyhow::Result;
 use reqwest::Client;
-use tokio::{
-    io::AsyncReadExt,
-    net::{UnixListener, UnixStream},
-};
+use tokio::{io::AsyncReadExt, net::UnixStream};
 
-use crate::{WORKER_SOCKET, api, data, db};
+use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db};
 
 #[tracing::instrument(skip_all)]
 pub async fn serve() -> Result<()> {
@@ -80,8 +77,7 @@ async fn start_http_worker(
 }
 
 async fn uds_listen(tx: RequestTx) -> Result<()> {
-    std::fs::remove_file(&*WORKER_SOCKET).ok();
-    let listener = UnixListener::bind(&*WORKER_SOCKET)?;
+    let listener = bind_unix_socket(&WORKER_SOCKET)?;
 
     tracing::info!("listening on {}", &*WORKER_SOCKET);
 

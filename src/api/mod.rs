@@ -2,11 +2,13 @@ pub mod payment;
 pub mod summary;
 mod util;
 
-use std::{fs::Permissions, net::Ipv4Addr, os::unix::fs::PermissionsExt, time::Duration};
+use std::{net::Ipv4Addr, time::Duration};
 
 use anyhow::Result;
 use axum::{Router, http::Request, routing};
-use tokio::net::{TcpListener, UnixListener};
+use tokio::net::TcpListener;
+
+use crate::bind_unix_socket;
 
 #[tracing::instrument(skip_all)]
 pub async fn serve() -> Result<()> {
@@ -38,14 +40,10 @@ pub async fn serve() -> Result<()> {
 
     match std::env::var("NGINX_SOCKET").ok() {
         Some(f) => {
-            std::fs::remove_file(&f).ok();
-            tracing::info!("Binding to unix socket on {f}");
-            let socket = UnixListener::bind(&f)?;
+            let listener = bind_unix_socket(&f)?;
+            tracing::info!("binded to unix socket on {f}");
 
-            let permissions = Permissions::from_mode(0o666);
-            std::fs::set_permissions(f, permissions)?;
-
-            axum::serve(socket, app).await?
+            axum::serve(listener, app).await?
         }
         None => {
             const PORT: u16 = 9999;

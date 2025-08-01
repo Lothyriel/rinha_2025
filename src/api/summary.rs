@@ -35,7 +35,7 @@ pub async fn get(OptionalQuery(query): OptionalQuery<SummaryQuery>) -> impl Into
 
 async fn get_summary(query: (i64, i64)) -> Result<Summary> {
     let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
-    tracing::debug!("connecting to unix socket on {}", *WORKER_SOCKET);
+    tracing::debug!("connected to unix socket on {}", *WORKER_SOCKET);
 
     let mut buf = [0u8; 32];
     let n = data::encode(WorkerRequest::Summary(query), &mut buf);
