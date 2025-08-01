@@ -123,25 +123,16 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Re
 
 #[tracing::instrument(skip_all)]
 async fn handle_completed_payments(writer: db::Pool, rx: PaymentRx) -> Result<()> {
-    const BATCH_SIZE: usize = 100;
-    let mut buffer = Vec::with_capacity(BATCH_SIZE);
+    let conn = writer.get()?;
 
     loop {
         let payment = rx.recv_async().await?;
 
         tracing::debug!("completed_payments_recv");
 
-        if buffer.len() < BATCH_SIZE {
-            buffer.push(payment);
-            continue;
-        }
-
         tracing::info!("db_write_flush");
 
-        let mut conn = writer.get()?;
-        db::insert_payment(&mut conn, &buffer)?;
-
-        buffer.clear();
+        db::insert_payment(&conn, &payment)?;
     }
 }
 

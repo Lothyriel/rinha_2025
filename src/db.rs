@@ -53,20 +53,13 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn insert_payment(conn: &mut Connection, batch: &[Payment]) -> Result<()> {
-    let tx = conn.transaction()?;
+pub fn insert_payment(conn: &Connection, p: &Payment) -> Result<()> {
+    let mut stmt = conn.prepare_cached(
+        "INSERT INTO payments (requested_at, amount, processor_id) VALUES (?, ?, ?)",
+    )?;
 
-    {
-        let mut stmt = tx.prepare_cached(
-            "INSERT INTO payments (requested_at, amount, processor_id) VALUES (?, ?, ?)",
-        )?;
+    stmt.execute(params![p.requested_at, p.amount, p.processor_id])?;
 
-        for p in batch {
-            stmt.execute(params![p.requested_at, p.amount, p.processor_id])?;
-        }
-    }
-
-    tx.commit()?;
     Ok(())
 }
 
