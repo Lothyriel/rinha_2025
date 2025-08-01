@@ -49,26 +49,32 @@ fn start_http_workers(payment_tx: PaymentTx) -> RequestTx {
 
     for _ in 0..HTTP_WORKERS {
         let worker = start_http_worker(payment_tx.clone(), tx.clone(), rx.clone(), client.clone());
-        tokio::spawn(worker);
+        tokio::spawn(async {
+            if let Err(err) = worker.await {
+                tracing::error!(?err, "http_worker_err")
+            }
+        });
     }
 
     tx
 }
 
-async fn start_http_worker(payment_tx: PaymentTx, tx: RequestTx, rx: RequestRx, client: Client) {
+async fn start_http_worker(
+    payment_tx: PaymentTx,
+    tx: RequestTx,
+    rx: RequestRx,
+    client: Client,
+) -> Result<()> {
     loop {
         let client = client.clone();
         let payment_tx = payment_tx.clone();
 
-        match rx.recv() {
-            Ok(req) => {
-                let result = payment::process(payment_tx, client, req.clone()).await;
+        let req = rx.recv()?;
+        let result = payment::process(payment_tx, client, req.clone()).await;
 
-                if result.is_err() {
-                    tx.send(req).expect("requeueing request");
-                }
-            }
-            Err(err) => tracing::error!(?err, "http_worker_err"),
+        if let Err(err) = result {
+            tracing::debug!(?err, "pp_client_err");
+            tx.send(req)?;
         }
     }
 }
@@ -101,10 +107,7 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream) -> Result<()> {
     let req = data::decode(&buf[..n]);
 
     match req {
-        WorkerRequest::Summary(query) => {
-            tracing::debug!("handling get_summary");
-            summary::process(socket, buf, query).await?
-        }
+        WorkerRequest::Summary(query) => summary::process(socket, buf, query).await?,
         WorkerRequest::Payment(req) => {
             tracing::debug!("sending to req_channel");
             tx.send(req)?
@@ -123,12 +126,14 @@ async fn handle_completed_payments(rx: PaymentRx) -> Result<()> {
     loop {
         let payment = rx.recv()?;
 
+        tracing::debug!("completed_payments_recv");
+
         if buffer.len() < BATCH_SIZE {
             buffer.push(payment);
             continue;
         }
 
-        tracing::info!("crossbeam_recv");
+        tracing::info!("db_write_flush");
 
         db::insert_payment(&buffer)?;
 

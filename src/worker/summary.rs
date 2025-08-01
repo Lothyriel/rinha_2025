@@ -4,6 +4,8 @@ use tokio::{io::AsyncWriteExt, net::UnixStream};
 use crate::{api::summary::Summary, data, db};
 
 pub async fn process(mut socket: UnixStream, mut buf: [u8; 64], query: (i64, i64)) -> Result<()> {
+    tracing::debug!("handling get_summary");
+
     let summary = get(query)?;
 
     let n = data::encode(summary, &mut buf);

@@ -6,7 +6,6 @@ mod worker;
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use once_cell::sync::Lazy;
-use tokio::signal::unix::SignalKind;
 use tracing_subscriber::{
     EnvFilter,
     fmt::{format::FmtSpan, layer},
@@ -19,11 +18,7 @@ use tracing_subscriber::{
 async fn main() {
     init_tracing().expect("Configure tracing");
 
-    tokio::select! {
-        _ = serve(Args::parse()) => {},
-        _ = signal(SignalKind::interrupt()) => {},
-        _ = signal(SignalKind::terminate()) => {},
-    }
+    serve(Args::parse()).await
 }
 
 fn init_tracing() -> Result<()> {
@@ -44,13 +39,6 @@ fn init_tracing() -> Result<()> {
     tracing_subscriber::registry().with(filter).with(fmt).init();
 
     Ok(())
-}
-
-async fn signal(kind: SignalKind) {
-    tokio::signal::unix::signal(kind)
-        .expect("failed to install signal handler")
-        .recv()
-        .await;
 }
 
 async fn serve(args: Args) {

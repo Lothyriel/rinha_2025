@@ -13,9 +13,10 @@ COPY . .
 RUN cargo build --release
 
 FROM debian:stable-slim AS runtime
+RUN apt-get update && apt-get install tini=0.19.0-1 -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /target/release/rinha /
 
-ENTRYPOINT ["./rinha"]
+ENTRYPOINT ["/usr/bin/tini", "--", "./rinha"]
 CMD []
 
 EXPOSE 80

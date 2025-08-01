@@ -13,8 +13,7 @@ pub async fn process(
 ) -> Result<()> {
     let payment = pp_client::send(&client, payment).await?;
 
-    tracing::info!("crossbeam_send");
-
+    tracing::info!("payment_send");
     payment_tx.send(payment)?;
 
     Ok(())
