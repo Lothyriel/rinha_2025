@@ -16,13 +16,13 @@ pub async fn serve() -> Result<()> {
 
     let db_tx = start_db_consumer();
 
-    _ = start_http_workers(db_tx);
+    let req_tx = start_http_workers(db_tx);
 
-    uds_listen().await
+    uds_listen(req_tx).await
 }
 
 fn start_db_consumer() -> PaymentTx {
-    let (tx, rx) = crossbeam::channel::unbounded();
+    let (tx, rx) = flume::unbounded();
 
     tracing::info!("Starting db_consumer");
 
@@ -36,7 +36,7 @@ fn start_db_consumer() -> PaymentTx {
 }
 
 fn start_http_workers(payment_tx: PaymentTx) -> RequestTx {
-    let (tx, rx) = crossbeam::channel::unbounded();
+    let (tx, rx) = flume::unbounded();
 
     tracing::info!("Starting payment_req_consumer");
     let client = Client::new();
@@ -66,12 +66,12 @@ async fn start_http_worker(
         let client = client.clone();
         let payment_tx = payment_tx.clone();
 
-        let req = rx.recv()?;
+        let req = rx.recv_async().await?;
         let result = payment::process(payment_tx, client, req.clone()).await;
 
         if let Err(err) = result {
             tracing::debug!(?err, "pp_client_err");
-            tx.send(req)?;
+            tx.send_async(req).await?;
         }
     }
 }
@@ -82,11 +82,12 @@ async fn uds_listen() -> Result<()> {
     tracing::info!("listening on {}", &*WORKER_SOCKET);
 
     loop {
+        let tx = tx.clone();
         let (socket, _) = listener.accept().await?;
         tracing::debug!("accepted unix socket connection");
 
         tokio::spawn(async {
-            if let Err(err) = handle_uds(/*tx,*/ socket).await {
+            if let Err(err) = handle_uds(tx, socket, reader).await {
                 tracing::error!(err = ?err, "handle_uds");
             }
         });
@@ -94,7 +95,7 @@ async fn uds_listen() -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-async fn handle_uds(mut socket: UnixStream) -> Result<()> {
+async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Result<()> {
     let mut buf = [0u8; 64];
 
     let n = socket.read(&mut buf).await?;
@@ -103,8 +104,9 @@ async fn handle_uds(mut socket: UnixStream) -> Result<()> {
 
     match req {
         WorkerRequest::Summary(query) => summary::process(socket, buf, query).await?,
-        WorkerRequest::Payment(_) => {
+        WorkerRequest::Payment(req) => {
             tracing::debug!("sending to req_channel");
+            tx.send_async(req).await?;
         }
         WorkerRequest::PurgeDb => purge_db()?,
     }
@@ -118,7 +120,7 @@ async fn handle_completed_payments(rx: PaymentRx) -> Result<()> {
     let mut buffer = Vec::with_capacity(BATCH_SIZE);
 
     loop {
-        let payment = rx.recv()?;
+        let payment = rx.recv_async().await?;
 
         tracing::debug!("completed_payments_recv");
 
@@ -150,8 +152,8 @@ pub enum WorkerRequest {
     PurgeDb,
 }
 
-type PaymentTx = crossbeam::channel::Sender<data::Payment>;
-type PaymentRx = crossbeam::channel::Receiver<data::Payment>;
+type PaymentTx = flume::Sender<data::Payment>;
+type PaymentRx = flume::Receiver<data::Payment>;
 
-type RequestTx = crossbeam::channel::Sender<api::payment::Request>;
-type RequestRx = crossbeam::channel::Receiver<api::payment::Request>;
+type RequestTx = flume::Sender<api::payment::Request>;
+type RequestRx = flume::Receiver<api::payment::Request>;

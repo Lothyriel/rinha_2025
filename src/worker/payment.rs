@@ -14,7 +14,7 @@ pub async fn process(
     let payment = pp_client::send(&client, payment).await?;
 
     tracing::info!("payment_send");
-    payment_tx.send(payment)?;
+    payment_tx.send_async(payment).await?;
 
     Ok(())
 }
