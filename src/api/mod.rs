@@ -12,11 +12,11 @@ use crate::bind_unix_socket;
 
 #[tracing::instrument(skip_all)]
 pub async fn serve() -> Result<()> {
-    tracing::info!("Starting API");
+    tracing::info!("starting API");
 
     let layer = tower_http::trace::TraceLayer::new_for_http()
         .make_span_with(|request: &Request<_>| {
-            tracing::info_span!(
+            tracing::debug_span!(
                 "http",
                 method = %request.method(),
                 uri = %request.uri(),
@@ -24,7 +24,7 @@ pub async fn serve() -> Result<()> {
             )
         })
         .on_request(|request: &Request<_>, _: &tracing::Span| {
-            tracing::info!(method = ?request.method(), url = ?request.uri(), "req");
+            tracing::debug!(method = ?request.method(), url = ?request.uri(), "req");
         })
         .on_response(
             |response: &axum::http::Response<_>, latency: Duration, _: &tracing::Span| {
@@ -48,7 +48,7 @@ pub async fn serve() -> Result<()> {
         None => {
             const PORT: u16 = 9999;
             let socket = TcpListener::bind((Ipv4Addr::UNSPECIFIED, PORT)).await?;
-            tracing::info!("Binding to network socket on {PORT}");
+            tracing::info!("binding to network socket on {PORT}");
             axum::serve(socket, app).await?;
         }
     };

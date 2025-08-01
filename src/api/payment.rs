@@ -17,7 +17,7 @@ pub async fn create(Json(payment): Json<Request>) -> StatusCode {
 
 #[tracing::instrument(skip_all)]
 async fn send(payment: Request) -> Result<()> {
-    tracing::info!(payment.correlation_id, "uds_send");
+    tracing::debug!(payment.correlation_id, "uds_send");
 
     let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
 

@@ -13,7 +13,7 @@ pub async fn process(
 ) -> Result<()> {
     let payment = pp_client::send(&client, payment).await?;
 
-    tracing::info!("payment_send");
+    tracing::debug!("payment_tx_send");
     payment_tx.send_async(payment).await?;
 
     Ok(())

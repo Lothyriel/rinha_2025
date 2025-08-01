@@ -10,7 +10,7 @@ use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db};
 
 #[tracing::instrument(skip_all)]
 pub async fn serve() -> Result<()> {
-    tracing::info!("Starting worker");
+    tracing::info!("starting worker");
 
     let writer = {
         let pool = db::write_pool()?;
@@ -29,7 +29,7 @@ pub async fn serve() -> Result<()> {
 fn start_db_consumer(pool: db::Pool) -> PaymentTx {
     let (tx, rx) = flume::unbounded();
 
-    tracing::info!("Starting db_consumer");
+    tracing::info!("starting db_consumer");
 
     tokio::spawn(async move {
         if let Err(err) = handle_completed_payments(pool, rx).await {
@@ -43,7 +43,7 @@ fn start_db_consumer(pool: db::Pool) -> PaymentTx {
 fn start_http_workers(payment_tx: PaymentTx) -> RequestTx {
     let (tx, rx) = flume::unbounded();
 
-    tracing::info!("Starting payment_req_consumer");
+    tracing::info!("starting payment_req_consumer");
     let client = Client::new();
 
     // maybe tweak this value?
@@ -130,8 +130,6 @@ async fn handle_completed_payments(writer: db::Pool, rx: PaymentRx) -> Result<()
 
         tracing::debug!("completed_payments_recv");
 
-        tracing::info!("db_write_flush");
-
         db::insert_payment(&conn, &payment)?;
     }
 }
@@ -143,7 +141,7 @@ fn purge_db() -> Result<()> {
 
     db::purge(&conn)?;
 
-    tracing::info!("DB purged");
+    tracing::info!("db purged");
 
     Ok(())
 }

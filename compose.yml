@@ -8,7 +8,7 @@ services:
       - worker
     environment:
       NGINX_SOCKET: "/var/run/api_0.sock"
-      RUST_LOG: "debug"
+      RUST_LOG: "warn"
     deploy:
       resources:
         limits:
@@ -19,6 +19,7 @@ services:
     <<: *api
     environment:
       NGINX_SOCKET: "/var/run/api_1.sock"
+      RUST_LOG: "warn"
 
   worker:
     image: localhost/rinha
@@ -28,7 +29,7 @@ services:
       - uds:/var/run
     command: ["-m", "worker"]
     environment:
-      RUST_LOG: "debug"
+      RUST_LOG: "warn"
     ulimits:
       nofile:
         soft: 16384
