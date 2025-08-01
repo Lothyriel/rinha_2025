@@ -12,22 +12,27 @@ use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db};
 pub async fn serve() -> Result<()> {
     tracing::info!("Starting worker");
 
-    db::init_db()?;
+    let writer = {
+        let pool = db::write_pool()?;
+        let conn = pool.get()?;
+        db::init_db(&conn)?;
+        pool
+    };
 
-    let db_tx = start_db_consumer();
+    let db_tx = start_db_consumer(writer);
 
     let req_tx = start_http_workers(db_tx);
 
     uds_listen(req_tx).await
 }
 
-fn start_db_consumer() -> PaymentTx {
+fn start_db_consumer(pool: db::Pool) -> PaymentTx {
     let (tx, rx) = flume::unbounded();
 
     tracing::info!("Starting db_consumer");
 
     tokio::spawn(async move {
-        if let Err(err) = handle_completed_payments(rx).await {
+        if let Err(err) = handle_completed_payments(pool, rx).await {
             tracing::error!(?err, "db_consumer_err");
         }
     });
@@ -76,12 +81,14 @@ async fn start_http_worker(
     }
 }
 
-async fn uds_listen() -> Result<()> {
+async fn uds_listen(tx: RequestTx) -> Result<()> {
     let listener = bind_unix_socket(&WORKER_SOCKET)?;
+    let reader = db::read_pool()?;
 
     tracing::info!("listening on {}", &*WORKER_SOCKET);
 
     loop {
+        let reader = reader.clone();
         let tx = tx.clone();
         let (socket, _) = listener.accept().await?;
         tracing::debug!("accepted unix socket connection");
@@ -103,7 +110,7 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Re
     let req = data::decode(&buf[..n]);
 
     match req {
-        WorkerRequest::Summary(query) => summary::process(socket, buf, query).await?,
+        WorkerRequest::Summary(query) => summary::process(socket, pool, buf, query).await?,
         WorkerRequest::Payment(req) => {
             tracing::debug!("sending to req_channel");
             tx.send_async(req).await?;
@@ -115,7 +122,7 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Re
 }
 
 #[tracing::instrument(skip_all)]
-async fn handle_completed_payments(rx: PaymentRx) -> Result<()> {
+async fn handle_completed_payments(writer: db::Pool, rx: PaymentRx) -> Result<()> {
     const BATCH_SIZE: usize = 100;
     let mut buffer = Vec::with_capacity(BATCH_SIZE);
 
@@ -131,14 +138,19 @@ async fn handle_completed_payments(rx: PaymentRx) -> Result<()> {
 
         tracing::info!("db_write_flush");
 
-        db::insert_payment(&buffer)?;
+        let mut conn = writer.get()?;
+        db::insert_payment(&mut conn, &buffer)?;
 
         buffer.clear();
     }
 }
 
 fn purge_db() -> Result<()> {
-    db::purge()?;
+    let writer = db::write_pool()?;
+
+    let conn = writer.get()?;
+
+    db::purge(&conn)?;
 
     tracing::info!("DB purged");
 
