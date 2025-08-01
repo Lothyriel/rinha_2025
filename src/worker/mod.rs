@@ -16,9 +16,9 @@ pub async fn serve() -> Result<()> {
 
     let db_tx = start_db_consumer();
 
-    let req_tx = start_http_workers(db_tx);
+    _ = start_http_workers(db_tx);
 
-    uds_listen(req_tx).await
+    uds_listen().await
 }
 
 fn start_db_consumer() -> PaymentTx {
@@ -76,18 +76,17 @@ async fn start_http_worker(
     }
 }
 
-async fn uds_listen(tx: RequestTx) -> Result<()> {
+async fn uds_listen() -> Result<()> {
     let listener = bind_unix_socket(&WORKER_SOCKET)?;
 
     tracing::info!("listening on {}", &*WORKER_SOCKET);
 
     loop {
-        let tx = tx.clone();
         let (socket, _) = listener.accept().await?;
         tracing::debug!("accepted unix socket connection");
 
         tokio::spawn(async {
-            if let Err(err) = handle_uds(tx, socket).await {
+            if let Err(err) = handle_uds(/*tx,*/ socket).await {
                 tracing::error!(err = ?err, "handle_uds");
             }
         });
@@ -95,7 +94,7 @@ async fn uds_listen(tx: RequestTx) -> Result<()> {
 }
 
 #[tracing::instrument(skip_all)]
-async fn handle_uds(tx: RequestTx, mut socket: UnixStream) -> Result<()> {
+async fn handle_uds(mut socket: UnixStream) -> Result<()> {
     let mut buf = [0u8; 64];
 
     let n = socket.read(&mut buf).await?;
@@ -104,9 +103,8 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream) -> Result<()> {
 
     match req {
         WorkerRequest::Summary(query) => summary::process(socket, buf, query).await?,
-        WorkerRequest::Payment(req) => {
+        WorkerRequest::Payment(_) => {
             tracing::debug!("sending to req_channel");
-            tx.send(req)?
         }
         WorkerRequest::PurgeDb => purge_db()?,
     }
