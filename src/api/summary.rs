@@ -1,7 +1,8 @@
 use anyhow::Result;
-use axum::Json;
+use axum::{Json, response::IntoResponse};
 use axum_extra::extract::OptionalQuery;
 use chrono::{DateTime, Utc};
+use reqwest::StatusCode;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
@@ -16,16 +17,20 @@ pub struct SummaryQuery {
 }
 
 #[tracing::instrument(skip_all)]
-pub async fn get(OptionalQuery(query): OptionalQuery<SummaryQuery>) -> Json<Summary> {
+pub async fn get(OptionalQuery(query): OptionalQuery<SummaryQuery>) -> impl IntoResponse {
     let query = if let Some(query) = query {
         (query.from.timestamp_micros(), query.to.timestamp_micros())
     } else {
         (0, i64::MAX)
     };
 
-    let summary = get_summary(query).await.expect("Should get summary");
-
-    Json(summary)
+    match get_summary(query).await {
+        Ok(s) => Json(s).into_response(),
+        Err(err) => {
+            tracing::error!(?err, "http_get_summary");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 async fn get_summary(query: (i64, i64)) -> Result<Summary> {

@@ -6,7 +6,11 @@ use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
 
 #[tracing::instrument(skip_all)]
 pub async fn create(Json(payment): Json<Request>) -> StatusCode {
-    tokio::spawn(async { send(payment).await.expect("uds_send /payments") });
+    tokio::spawn(async {
+        if let Err(err) = send(payment).await {
+            tracing::error!(?err, "uds_send_err /payments");
+        }
+    });
 
     StatusCode::OK
 }

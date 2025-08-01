@@ -6,9 +6,10 @@ use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
 
 #[tracing::instrument(skip_all)]
 pub async fn purge_db() -> StatusCode {
-    purge().await.expect("purge_db uds_send");
-
-    StatusCode::OK
+    match purge().await {
+        Ok(_) => StatusCode::OK,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
 }
 
 #[tracing::instrument(skip_all)]
