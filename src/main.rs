@@ -64,7 +64,7 @@ struct Args {
 }
 
 static WORKER_SOCKET: Lazy<String> =
-    Lazy::new(|| std::env::var("WORKER_SOCKET").unwrap_or("/uds/rinha.sock".to_string()));
+    Lazy::new(|| std::env::var("WORKER_SOCKET").unwrap_or("/var/run/rinha.sock".to_string()));
 
 fn bind_unix_socket(file: &str) -> Result<UnixListener> {
     std::fs::remove_file(file).ok();
