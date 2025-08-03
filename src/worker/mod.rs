@@ -6,10 +6,19 @@ use std::time::Instant;
 
 use anyhow::Result;
 use metrics::Unit;
+use once_cell::sync::Lazy;
 use reqwest::Client;
 use tokio::{io::AsyncReadExt, net::UnixStream};
 
 use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db};
+
+// maybe tweak this value?
+static HTTP_WORKERS: Lazy<u8> = Lazy::new(|| {
+    std::env::var("HTTP_WORKERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2)
+});
 
 pub async fn serve() -> Result<()> {
     tracing::info!("starting worker");
@@ -48,10 +57,7 @@ fn start_http_workers(payment_tx: PaymentTx) -> RequestTx {
     tracing::info!("starting payment_req_consumer");
     let client = Client::new();
 
-    // maybe tweak this value?
-    const HTTP_WORKERS: usize = 4;
-
-    for _ in 0..HTTP_WORKERS {
+    for _ in 0..*HTTP_WORKERS {
         let worker = start_http_worker(payment_tx.clone(), tx.clone(), rx.clone(), client.clone());
         tokio::spawn(async {
             if let Err(err) = worker.await {
