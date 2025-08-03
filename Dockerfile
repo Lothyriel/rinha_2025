@@ -19,4 +19,4 @@ COPY --from=builder /target/release/rinha /
 ENTRYPOINT ["/usr/bin/tini", "--", "./rinha"]
 CMD []
 
-EXPOSE 80
+EXPOSE 9999
