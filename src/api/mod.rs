@@ -59,59 +59,58 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
         return Ok(());
     }
 
-    match buf[0] {
-        // [G]ET /payments-summary
-        b'G' => {
-            let now = Instant::now();
-
-            let summary = get_summary(buf).await?;
-
-            let body = serde_json::to_string(&summary)?;
-            let res = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            );
-
-            socket.write_all(res.as_bytes()).await?;
-            drop(socket);
-
-            metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
-            metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
-        }
-        // [P]OST
-        b'P' => match buf[7] {
-            // POST /p[a]yments
-            b'a' => {
+    loop {
+        match buf[0] {
+            // [G]ET /payments-summary
+            b'G' => {
                 let now = Instant::now();
 
-                socket.write_all(EMPTY_RES).await?;
-                socket.shutdown().await?;
-                drop(socket);
+                let summary = get_summary(buf).await?;
 
-                metrics::describe_histogram!("http.post", Unit::Microseconds, "http handler time");
-                metrics::histogram!("http.post").record(now.elapsed().as_micros() as f64);
+                let body = serde_json::to_string(&summary)?;
+                let res = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
 
-                handle_payment(buf).await?;
+                socket.write_all(res.as_bytes()).await?;
+
+                metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
+                metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
             }
-            // POST /p[u]rge-payments
-            b'u' => {
-                socket.write_all(EMPTY_RES).await?;
-                socket.shutdown().await?;
-                drop(socket);
+            // [P]OST
+            b'P' => match buf[7] {
+                // POST /p[a]yments
+                b'a' => {
+                    let now = Instant::now();
 
-                util::purge().await?;
-            }
+                    socket.write_all(EMPTY_RES).await?;
+
+                    metrics::describe_histogram!(
+                        "http.post",
+                        Unit::Microseconds,
+                        "http handler time"
+                    );
+                    metrics::histogram!("http.post").record(now.elapsed().as_micros() as f64);
+
+                    handle_payment(buf).await?;
+                }
+                // POST /p[u]rge-payments
+                b'u' => {
+                    socket.write_all(EMPTY_RES).await?;
+
+                    util::purge().await?;
+                }
+                _ => {
+                    tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf));
+                }
+            },
             _ => {
                 tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf));
             }
-        },
-        _ => {
-            tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf));
         }
     }
-
-    Ok(())
 }
 
 async fn handle_payment(buf: [u8; 512]) -> Result<(), anyhow::Error> {
