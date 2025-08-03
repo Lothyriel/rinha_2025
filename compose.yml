@@ -1,25 +1,28 @@
+x-api_template: &api
+  image: localhost/rinha
+  volumes:
+    - uds:/var/run
+  command: ["-m", "api"]
+  depends_on:
+    - worker
+  deploy:
+    resources:
+      limits:
+        cpus: "0.2"
+        memory: "30MB"
+
 services:
-  api_0: &api
-    image: localhost/rinha
-    volumes:
-      - uds:/var/run
-    command: ["-m", "api"]
-    depends_on:
-      - worker
+  api_0:
+    <<: *api
     environment:
       NGINX_SOCKET: "/var/run/api_0.sock"
-      RUST_LOG: "info"
-    deploy:
-      resources:
-        limits:
-          cpus: "0.2"
-          memory: "30MB"
+      RUST_LOG: "warn"
 
   api_1:
     <<: *api
     environment:
       NGINX_SOCKET: "/var/run/api_1.sock"
-      RUST_LOG: "info"
+      RUST_LOG: "warn"
 
   worker:
     image: localhost/rinha
@@ -29,7 +32,7 @@ services:
       - uds:/var/run
     command: ["-m", "worker"]
     environment:
-      RUST_LOG: "info"
+      RUST_LOG: "warn"
     ulimits:
       nofile:
         soft: 16384
