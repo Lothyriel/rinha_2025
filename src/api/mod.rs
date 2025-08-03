@@ -24,7 +24,11 @@ pub async fn serve() -> Result<()> {
 
             loop {
                 let (socket, _) = listener.accept().await?;
-                tokio::spawn(async { handle_http(socket).await });
+                tokio::spawn(async {
+                    if let Err(err) = handle_http(socket).await {
+                        tracing::error!(?err, "http_err");
+                    }
+                });
             }
         }
         None => {
@@ -34,7 +38,11 @@ pub async fn serve() -> Result<()> {
 
             loop {
                 let (socket, _) = listener.accept().await?;
-                tokio::spawn(async { handle_http(socket).await });
+                tokio::spawn(async {
+                    if let Err(err) = handle_http(socket).await {
+                        tracing::error!(?err, "http_err");
+                    }
+                });
             }
         }
     };
