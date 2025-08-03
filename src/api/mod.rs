@@ -53,13 +53,14 @@ const EMPTY_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
 async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result<()> {
     let mut buf = [0; 512];
 
-    let n = socket.read(&mut buf).await?;
-
-    if n == 0 {
-        return Ok(());
-    }
-
     loop {
+        let n = socket.read(&mut buf).await?;
+
+        if n == 0 {
+            socket.shutdown().await?;
+            return Ok(());
+        }
+
         match buf[0] {
             // [G]ET /payments-summary
             b'G' => {
@@ -118,10 +119,14 @@ async fn handle_payment(buf: [u8; 512]) -> Result<(), anyhow::Error> {
         .iter()
         .position(|&b| b == b'{')
         .expect("find json start");
+
     let end = buf.iter().rposition(|&b| b == b'}').expect("find json end");
+
     let req = &buf[start..end + 1];
     let req = serde_json::from_slice(req)?;
+
     payment::send(req).await?;
+
     Ok(())
 }
 
