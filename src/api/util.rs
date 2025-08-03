@@ -1,17 +1,9 @@
 use anyhow::Result;
-use axum::http::StatusCode;
 use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
 
-pub async fn purge_db() -> StatusCode {
-    match purge().await {
-        Ok(_) => StatusCode::OK,
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    }
-}
-
-async fn purge() -> Result<()> {
+pub async fn purge() -> Result<()> {
     let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
 
     let mut buf = [0u8; 32];

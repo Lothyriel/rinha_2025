@@ -2,47 +2,129 @@ pub mod payment;
 pub mod summary;
 mod util;
 
-use std::{net::Ipv4Addr, time::Duration};
+use std::{net::Ipv4Addr, time::Instant};
 
 use anyhow::Result;
-use axum::{Router, http::Request, routing};
-use tokio::net::TcpListener;
+use chrono::DateTime;
+use metrics::Unit;
+use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    net::TcpListener,
+};
 
 use crate::bind_unix_socket;
 
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
 
-    let layer = tower_http::trace::TraceLayer::new_for_http()
-        .on_request(|request: &Request<_>, _: &tracing::Span| {
-            tracing::debug!(method = ?request.method(), url = ?request.uri(), "req");
-        })
-        .on_response(
-            |response: &axum::http::Response<_>, latency: Duration, _: &tracing::Span| {
-                tracing::debug!(status = ?response.status(), ?latency, "res");
-            },
-        );
-
-    let app = Router::new()
-        .route("/payments", routing::post(payment::create))
-        .route("/payments-summary", routing::get(summary::get))
-        .route("/purge-payments", routing::post(util::purge_db))
-        .layer(layer);
-
     match std::env::var("NGINX_SOCKET").ok() {
         Some(f) => {
             let listener = bind_unix_socket(&f)?;
             tracing::info!("binded to unix socket on {f}");
 
-            axum::serve(listener, app).await?
+            loop {
+                let (socket, _) = listener.accept().await?;
+                tokio::spawn(async { handle_http(socket).await });
+            }
         }
         None => {
             const PORT: u16 = 9999;
-            let socket = TcpListener::bind((Ipv4Addr::UNSPECIFIED, PORT)).await?;
+            let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, PORT)).await?;
             tracing::info!("binding to network socket on {PORT}");
-            axum::serve(socket, app).await?;
+
+            loop {
+                let (socket, _) = listener.accept().await?;
+                tokio::spawn(async { handle_http(socket).await });
+            }
         }
     };
+}
 
-    Ok(())
+const EMPTY_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+
+async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result<()> {
+    let mut buf = [0; 512];
+
+    loop {
+        let n = socket.read(&mut buf).await?;
+
+        if n == 0 {
+            return Ok(());
+        }
+
+        const RFC_3339_SIZE: usize = 24;
+
+        match buf[0] {
+            b'G' => {
+                let now = Instant::now();
+
+                let from = &buf[27..27 + RFC_3339_SIZE];
+                const NEXT: usize = 27 + RFC_3339_SIZE + 2 + 2;
+                let to = &buf[NEXT..NEXT + RFC_3339_SIZE];
+
+                let from = std::str::from_utf8(from)?;
+                let to = std::str::from_utf8(to)?;
+
+                let from = DateTime::parse_from_rfc3339(from).unwrap_or_default();
+                let to = DateTime::parse_from_rfc3339(to)
+                    .unwrap_or(DateTime::from_timestamp_nanos(i64::MAX).into());
+
+                let query = (from.timestamp_micros(), to.timestamp_micros());
+
+                let summary = summary::get_summary(query).await?;
+
+                let body = serde_json::to_string(&summary)?;
+
+                let res = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+
+                socket.write_all(res.as_bytes()).await?;
+
+                metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
+                metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
+            }
+            b'P' => match buf[7] {
+                b'a' => {
+                    let now = Instant::now();
+
+                    socket.write_all(EMPTY_RES).await?;
+                    socket.shutdown().await?;
+
+                    let start = buf
+                        .iter()
+                        .position(|&b| b == b'{')
+                        .expect("find json start");
+
+                    let end = buf.iter().rposition(|&b| b == b'}').expect("find json end");
+
+                    let req = &buf[start..end + 1];
+
+                    let req = serde_json::from_slice(req)?;
+
+                    payment::send(req).await?;
+
+                    metrics::describe_histogram!(
+                        "http.post",
+                        Unit::Microseconds,
+                        "http handler time"
+                    );
+                    metrics::histogram!("http.post").record(now.elapsed().as_micros() as f64);
+                }
+                b'u' => {
+                    socket.write_all(EMPTY_RES).await?;
+                    socket.shutdown().await?;
+                    util::purge().await?;
+                }
+                _ => {
+                    tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf))
+                }
+            },
+            _ => {
+                tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf));
+            }
+        }
+    }
 }
