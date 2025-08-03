@@ -4,6 +4,7 @@ use anyhow::Result;
 use axum::{Json, response::IntoResponse};
 use axum_extra::extract::OptionalQuery;
 use chrono::{DateTime, Utc};
+use metrics::Unit;
 use reqwest::StatusCode;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -35,7 +36,7 @@ pub async fn get(OptionalQuery(query): OptionalQuery<SummaryQuery>) -> impl Into
         }
     };
 
-    metrics::describe_histogram!("http.get", metrics::Unit::Microseconds, "http handler time");
+    metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
     metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
 
     res
