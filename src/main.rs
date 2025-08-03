@@ -21,6 +21,9 @@ async fn main() {
     serve(Args::parse()).await
 }
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn init_metrics() {
     let mut recorder = metrics_printer::PrintRecorder::default();
 
