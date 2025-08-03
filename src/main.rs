@@ -3,45 +3,54 @@ mod data;
 mod db;
 mod worker;
 
-use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+use std::{fs::Permissions, os::unix::fs::PermissionsExt, time::Duration};
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
+use metrics_util::Quantile;
 use once_cell::sync::Lazy;
 use tokio::net::UnixListener;
-use tracing_subscriber::{
-    EnvFilter,
-    fmt::{format::FmtSpan, layer},
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-};
+use tracing_subscriber::{EnvFilter, fmt::layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-#[tracing::instrument(skip_all)]
 async fn main() {
-    init_tracing().expect("Configure tracing");
+    init_tracing();
+
+    init_metrics();
 
     serve(Args::parse()).await
 }
 
-fn init_tracing() -> Result<()> {
+fn init_metrics() {
+    let mut recorder = metrics_printer::PrintRecorder::default();
+
+    recorder
+        .set_print_interval(Duration::from_secs(10))
+        .select_quantiles(Box::new([
+            Quantile::new(0.50),
+            Quantile::new(0.99),
+            Quantile::new(1.0),
+        ]));
+
+    recorder.install().expect("register recorder");
+}
+
+fn init_tracing() {
     dotenvy::dotenv().ok();
 
-    let filter = EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info"))?;
+    let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("info"))
+        .expect("valid level");
 
     let fmt = layer()
-        .json()
         .with_target(false)
         .with_line_number(true)
         .with_file(true)
         .with_thread_ids(true)
         .with_level(true)
-        .with_current_span(true)
-        .with_span_events(FmtSpan::CLOSE);
+        .with_ansi(false);
 
     tracing_subscriber::registry().with(filter).with(fmt).init();
-
-    Ok(())
 }
 
 async fn serve(args: Args) {

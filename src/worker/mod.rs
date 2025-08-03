@@ -2,13 +2,15 @@ mod payment;
 mod pp_client;
 mod summary;
 
+use std::time::Instant;
+
 use anyhow::Result;
+use metrics::Unit;
 use reqwest::Client;
 use tokio::{io::AsyncReadExt, net::UnixStream};
 
 use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db};
 
-#[tracing::instrument(skip_all)]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting worker");
 
@@ -101,8 +103,9 @@ async fn uds_listen(tx: RequestTx) -> Result<()> {
     }
 }
 
-#[tracing::instrument(skip_all)]
 async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Result<()> {
+    let now = Instant::now();
+
     let mut buf = [0u8; 64];
 
     let n = socket.read(&mut buf).await?;
@@ -118,10 +121,12 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Re
         WorkerRequest::PurgeDb => purge_db()?,
     }
 
+    metrics::describe_histogram!("uds.handle", Unit::Microseconds, "http handler time");
+    metrics::histogram!("uds.handle").record(now.elapsed().as_micros() as f64);
+
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
 async fn handle_completed_payments(writer: db::Pool, rx: PaymentRx) -> Result<()> {
     let conn = writer.get()?;
 

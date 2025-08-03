@@ -10,18 +10,10 @@ use tokio::net::TcpListener;
 
 use crate::bind_unix_socket;
 
-#[tracing::instrument(skip_all)]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
 
     let layer = tower_http::trace::TraceLayer::new_for_http()
-        .make_span_with(|request: &Request<_>| {
-            tracing::info_span!(
-                "http",
-                method = %request.method(),
-                uri = %request.uri(),
-            )
-        })
         .on_request(|request: &Request<_>, _: &tracing::Span| {
             tracing::debug!(method = ?request.method(), url = ?request.uri(), "req");
         })

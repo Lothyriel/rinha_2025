@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use anyhow::Result;
 use axum::{Json, response::IntoResponse};
 use axum_extra::extract::OptionalQuery;
@@ -16,21 +18,27 @@ pub struct SummaryQuery {
     to: DateTime<Utc>,
 }
 
-#[tracing::instrument(skip_all)]
 pub async fn get(OptionalQuery(query): OptionalQuery<SummaryQuery>) -> impl IntoResponse {
+    let now = Instant::now();
+
     let query = if let Some(query) = query {
         (query.from.timestamp_micros(), query.to.timestamp_micros())
     } else {
         (0, i64::MAX)
     };
 
-    match get_summary(query).await {
+    let res = match get_summary(query).await {
         Ok(s) => Json(s).into_response(),
         Err(err) => {
             tracing::error!(?err, "http_get_summary");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
-    }
+    };
+
+    metrics::describe_histogram!("http.get", metrics::Unit::Microseconds, "http handler time");
+    metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
+
+    res
 }
 
 async fn get_summary(query: (i64, i64)) -> Result<Summary> {

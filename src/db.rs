@@ -1,5 +1,6 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use metrics::Unit;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, OpenFlags, Result, params};
 
@@ -52,19 +53,24 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     )
 }
 
-#[tracing::instrument(skip_all)]
 pub fn insert_payment(conn: &Connection, p: &Payment) -> Result<()> {
+    let now = Instant::now();
+
     let mut stmt = conn.prepare_cached(
         "INSERT INTO payments (requested_at, amount, processor_id) VALUES (?, ?, ?)",
     )?;
 
     stmt.execute(params![p.requested_at, p.amount, p.processor_id])?;
 
+    metrics::describe_histogram!("db.insert", Unit::Microseconds, "db insert time");
+    metrics::histogram!("db.insert").record(now.elapsed().as_micros() as f64);
+
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
 pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<PaymentDto>> {
+    let now = Instant::now();
+
     let mut stmt = conn.prepare_cached(
         "SELECT processor_id, amount FROM payments WHERE requested_at BETWEEN ? AND ?;",
     )?;
@@ -76,7 +82,12 @@ pub fn get_payments(conn: &Connection, (from, to): (i64, i64)) -> Result<Vec<Pay
         })
     })?;
 
-    query_map.collect()
+    let result = query_map.collect();
+
+    metrics::describe_histogram!("db.select", Unit::Microseconds, "db query time");
+    metrics::histogram!("db.select").record(now.elapsed().as_micros() as f64);
+
+    result
 }
 
 pub fn purge(conn: &Connection) -> Result<()> {

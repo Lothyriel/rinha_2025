@@ -20,7 +20,6 @@ pub async fn process(
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
 fn get(pool: db::Pool, query: (i64, i64)) -> Result<Summary> {
     let payments = {
         let conn = pool.get()?;

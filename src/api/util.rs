@@ -4,7 +4,6 @@ use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
 
-#[tracing::instrument(skip_all)]
 pub async fn purge_db() -> StatusCode {
     match purge().await {
         Ok(_) => StatusCode::OK,
@@ -12,7 +11,6 @@ pub async fn purge_db() -> StatusCode {
     }
 }
 
-#[tracing::instrument(skip_all)]
 async fn purge() -> Result<()> {
     let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
 

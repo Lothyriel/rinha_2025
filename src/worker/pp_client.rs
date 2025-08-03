@@ -1,5 +1,8 @@
+use std::time::Instant;
+
 use anyhow::{Result, anyhow};
 use chrono::Utc;
+use metrics::Unit;
 use once_cell::sync::Lazy;
 use reqwest::{Client, StatusCode};
 
@@ -18,7 +21,6 @@ pub static PAYMENT_PROCESSORS: Lazy<[(u8, String); 2]> = Lazy::new(|| {
     [(1, default), (2, fallback)]
 });
 
-#[tracing::instrument(skip_all)]
 pub async fn send(client: &Client, payment: payment::Request) -> Result<Payment> {
     //todo: this needs to be handled way better
     //todo: map and use the GET /payments/service-health
@@ -47,8 +49,9 @@ pub async fn send(client: &Client, payment: payment::Request) -> Result<Payment>
     Ok(payment)
 }
 
-#[tracing::instrument(skip_all)]
 async fn http_send(uri: &str, client: &Client, payment: &ProcessorPaymentRequest) -> Result<()> {
+    let now = Instant::now();
+
     let res = client
         .post(format!("{uri}/payments"))
         .json(payment)
@@ -59,8 +62,13 @@ async fn http_send(uri: &str, client: &Client, payment: &ProcessorPaymentRequest
 
     tracing::debug!(pp_payments_status = ?status);
 
-    match res.status() {
+    let res = match res.status() {
         StatusCode::OK => Ok(()),
         _ => Err(anyhow!("{status}")),
-    }
+    };
+
+    metrics::describe_histogram!("pp_http", Unit::Microseconds, "payment processor http time");
+    metrics::histogram!("pp_http").record(now.elapsed().as_micros() as f64);
+
+    res
 }
