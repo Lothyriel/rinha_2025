@@ -17,6 +17,7 @@ pub fn decode<D: serde::de::DeserializeOwned>(input: &[u8]) -> D {
 pub struct Payment {
     pub amount: u64,
     pub requested_at: i64,
+    #[allow(dead_code)]
     pub processor_id: u8,
 }
 

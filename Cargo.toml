@@ -9,6 +9,7 @@ anyhow = "1.0.98"
 clap = { version = "4.5.41", features = ["derive"] }
 
 flume = { version = "0.11.1", features = ["async"] }
+parking_lot = "0.12.4"
 
 axum = "0.8.4"
 axum-extra = { version = "0.10.1", features = ["query"] }
@@ -16,10 +17,6 @@ axum-extra = { version = "0.10.1", features = ["query"] }
 reqwest = { version = "0.12.22", default-features = false, features = ["json"] }
 
 chrono = { version = "0.4.41", features = ["serde"] }
-
-r2d2 = "0.8.10"
-r2d2_sqlite = "0.31.0"
-rusqlite = { version = "0.37.0", features = ["bundled"] }
 
 serde = { version = "1.0.219", features = ["derive"] }
 bincode = { version = "2.0.1", features = ["serde"] }

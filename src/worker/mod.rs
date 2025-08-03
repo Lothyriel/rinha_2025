@@ -23,27 +23,22 @@ static HTTP_WORKERS: Lazy<u8> = Lazy::new(|| {
 pub async fn serve() -> Result<()> {
     tracing::info!("starting worker");
 
-    let writer = {
-        let pool = db::write_pool()?;
-        let conn = pool.get()?;
-        db::init_db(&conn)?;
-        pool
-    };
+    let store = db::Store::new();
 
-    let db_tx = start_db_consumer(writer);
+    let db_tx = start_db_consumer(store.clone());
 
     let req_tx = start_http_workers(db_tx);
 
-    uds_listen(req_tx).await
+    uds_listen(req_tx, store).await
 }
 
-fn start_db_consumer(pool: db::Pool) -> PaymentTx {
+fn start_db_consumer(store: db::Store) -> PaymentTx {
     let (tx, rx) = flume::unbounded();
 
     tracing::info!("starting db_consumer");
 
     tokio::spawn(async move {
-        if let Err(err) = handle_completed_payments(pool, rx).await {
+        if let Err(err) = handle_completed_payments(store, rx).await {
             tracing::error!(?err, "db_consumer_err");
         }
     });
@@ -89,27 +84,26 @@ async fn start_http_worker(
     }
 }
 
-async fn uds_listen(tx: RequestTx) -> Result<()> {
+async fn uds_listen(tx: RequestTx, store: db::Store) -> Result<()> {
     let listener = bind_unix_socket(&WORKER_SOCKET)?;
-    let reader = db::read_pool()?;
 
     tracing::info!("listening on {}", &*WORKER_SOCKET);
 
     loop {
-        let reader = reader.clone();
         let tx = tx.clone();
+        let store = store.clone();
         let (socket, _) = listener.accept().await?;
         tracing::debug!("accepted unix socket connection");
 
         tokio::spawn(async {
-            if let Err(err) = handle_uds(tx, socket, reader).await {
+            if let Err(err) = handle_uds(tx, socket, store).await {
                 tracing::error!(err = ?err, "handle_uds");
             }
         });
     }
 }
 
-async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Result<()> {
+async fn handle_uds(tx: RequestTx, mut socket: UnixStream, store: db::Store) -> Result<()> {
     let now = Instant::now();
 
     let mut buf = [0u8; 64];
@@ -119,12 +113,12 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Re
     let req = data::decode(&buf[..n]);
 
     match req {
-        WorkerRequest::Summary(query) => summary::process(socket, pool, buf, query).await?,
+        WorkerRequest::Summary(query) => summary::process(socket, store, buf, query).await?,
         WorkerRequest::Payment(req) => {
             tracing::debug!("sending to req_channel");
             tx.send_async(req).await?;
         }
-        WorkerRequest::PurgeDb => purge_db()?,
+        WorkerRequest::PurgeDb => purge_db(store)?,
     }
 
     metrics::describe_histogram!("uds.handle", Unit::Microseconds, "http handler time");
@@ -133,24 +127,18 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream, pool: db::Pool) -> Re
     Ok(())
 }
 
-async fn handle_completed_payments(writer: db::Pool, rx: PaymentRx) -> Result<()> {
-    let conn = writer.get()?;
-
+async fn handle_completed_payments(writer: db::Store, rx: PaymentRx) -> Result<()> {
     loop {
         let payment = rx.recv_async().await?;
 
         tracing::debug!("completed_payments_recv");
 
-        db::insert_payment(&conn, &payment)?;
+        writer.insert(payment);
     }
 }
 
-fn purge_db() -> Result<()> {
-    let writer = db::write_pool()?;
-
-    let conn = writer.get()?;
-
-    db::purge(&conn)?;
+fn purge_db(store: db::Store) -> Result<()> {
+    store.purge();
 
     tracing::info!("db purged");
 

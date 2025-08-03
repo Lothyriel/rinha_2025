@@ -19,7 +19,7 @@ pub async fn serve() -> Result<()> {
         })
         .on_response(
             |response: &axum::http::Response<_>, latency: Duration, _: &tracing::Span| {
-                tracing::info!(status = ?response.status(), ?latency, "res");
+                tracing::debug!(status = ?response.status(), ?latency, "res");
             },
         );
 
