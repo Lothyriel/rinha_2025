@@ -2,7 +2,7 @@ pub mod payment;
 pub mod summary;
 mod util;
 
-use std::{net::Ipv4Addr, time::Instant};
+use std::{io::IoSlice, net::Ipv4Addr, time::Instant};
 
 use anyhow::Result;
 use chrono::DateTime;
@@ -48,7 +48,7 @@ pub async fn serve() -> Result<()> {
     };
 }
 
-const EMPTY_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+const OK_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
 
 async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result<()> {
     let mut buf = [0; 512];
@@ -68,14 +68,17 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
 
                 let summary = get_summary(buf).await?;
 
-                let body = serde_json::to_string(&summary)?;
-                let res = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
+                let body = serde_json::to_vec(&summary)?;
+                let body_len = body.len().to_string();
 
-                socket.write_all(res.as_bytes()).await?;
+                let res = &[
+                    IoSlice::new(b"HTTP/1.1 200 OK\r\nContent-Length: "),
+                    IoSlice::new(body_len.as_bytes()),
+                    IoSlice::new(b"\r\n\r\n"),
+                    IoSlice::new(&body),
+                ];
+
+                _ = socket.write_vectored(res).await?;
 
                 metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
                 metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
@@ -86,7 +89,7 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
                 b'a' => {
                     let now = Instant::now();
 
-                    socket.write_all(EMPTY_RES).await?;
+                    socket.write_all(OK_RES).await?;
 
                     metrics::describe_histogram!(
                         "http.post",
@@ -99,7 +102,7 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
                 }
                 // POST /p[u]rge-payments
                 b'u' => {
-                    socket.write_all(EMPTY_RES).await?;
+                    socket.write_all(OK_RES).await?;
 
                     util::purge().await?;
                 }
