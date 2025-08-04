@@ -24,8 +24,8 @@ impl Store {
             self.payments.write().push(payment);
         }
 
-        metrics::describe_histogram!("db.insert", Unit::Microseconds, "db insert time");
-        metrics::histogram!("db.insert").record(now.elapsed().as_micros() as f64);
+        metrics::describe_histogram!("db.insert", Unit::Nanoseconds, "db insert time");
+        metrics::histogram!("db.insert").record(now.elapsed().as_nanos() as f64);
     }
 
     pub fn get(&self, (from, to): (i64, i64)) -> Summary {
@@ -49,8 +49,8 @@ impl Store {
             })
         };
 
-        metrics::describe_histogram!("db.select", Unit::Microseconds, "db query time");
-        metrics::histogram!("db.select").record(now.elapsed().as_micros() as f64);
+        metrics::describe_histogram!("db.select", Unit::Nanoseconds, "db query time");
+        metrics::histogram!("db.select").record(now.elapsed().as_nanos() as f64);
 
         Summary::new([summary, (0, 0)])
     }
