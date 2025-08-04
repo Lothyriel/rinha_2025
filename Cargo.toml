@@ -34,3 +34,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
 metrics = "0.24.2"
 metrics-util = "0.19.1"
 metrics_printer = "0.2.0"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
