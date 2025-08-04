@@ -28,6 +28,7 @@ fn init_metrics() {
     let mut recorder = metrics_printer::PrintRecorder::default();
 
     recorder
+        .do_print_metadata()
         .set_print_interval(Duration::from_secs(10))
         .select_quantiles(Box::new([
             Quantile::new(0.50),
