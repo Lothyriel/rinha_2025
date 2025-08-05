@@ -12,7 +12,7 @@ use tokio::{
     net::TcpListener,
 };
 
-use crate::{api::summary::Summary, bind_unix_socket};
+use crate::bind_unix_socket;
 
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
@@ -51,13 +51,14 @@ pub async fn serve() -> Result<()> {
 const OK_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
 
 async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result<()> {
-    let mut buf = [0; 512];
+    let mut buf = [0u8; 512];
 
     loop {
         let n = socket.read(&mut buf).await?;
 
         if n == 0 {
             socket.shutdown().await?;
+            tracing::info!("socket closed");
             return Ok(());
         }
 
@@ -66,16 +67,14 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
             b'G' => {
                 let now = Instant::now();
 
-                let summary = get_summary(buf).await?;
-
-                let body = serde_json::to_vec(&summary)?;
-                let body_len = body.len().to_string();
+                let n = get_summary(&mut buf).await?;
+                let body_len = n.to_string();
 
                 let res = &[
                     IoSlice::new(b"HTTP/1.1 200 OK\r\nContent-Length: "),
                     IoSlice::new(body_len.as_bytes()),
                     IoSlice::new(b"\r\n\r\n"),
-                    IoSlice::new(&body),
+                    IoSlice::new(&buf[..n]),
                 ];
 
                 _ = socket.write_vectored(res).await?;
@@ -98,7 +97,11 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
                     );
                     metrics::histogram!("http.post").record(now.elapsed().as_micros() as f64);
 
-                    handle_payment(buf).await?;
+                    tokio::spawn(async move {
+                        if let Err(err) = handle_payment(&buf).await {
+                            tracing::error!(?err, "handle_payment");
+                        }
+                    });
                 }
                 // POST /p[u]rge-payments
                 b'u' => {
@@ -117,7 +120,7 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
     }
 }
 
-async fn handle_payment(buf: [u8; 512]) -> Result<(), anyhow::Error> {
+async fn handle_payment(buf: &[u8]) -> Result<(), anyhow::Error> {
     let start = buf
         .iter()
         .position(|&b| b == b'{')
@@ -135,7 +138,7 @@ async fn handle_payment(buf: [u8; 512]) -> Result<(), anyhow::Error> {
 
 const DISTANT_FUTURE: DateTime<chrono::Utc> = DateTime::from_timestamp_nanos(i64::MAX);
 
-async fn get_summary(buf: [u8; 512]) -> Result<Summary, anyhow::Error> {
+async fn get_summary(buf: &mut [u8]) -> Result<usize> {
     const RFC_3339_SIZE: usize = 24;
     const TO_OFFSET: usize = 27 + RFC_3339_SIZE + 2 + 2;
 
@@ -150,5 +153,5 @@ async fn get_summary(buf: [u8; 512]) -> Result<Summary, anyhow::Error> {
 
     let query = (from.timestamp_micros(), to.timestamp_micros());
 
-    summary::get_summary(query).await
+    summary::get_summary(query, buf).await
 }

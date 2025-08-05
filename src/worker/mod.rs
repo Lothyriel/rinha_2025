@@ -106,14 +106,14 @@ async fn uds_listen(tx: RequestTx, store: db::Store) -> Result<()> {
 async fn handle_uds(tx: RequestTx, mut socket: UnixStream, store: db::Store) -> Result<()> {
     let now = Instant::now();
 
-    let mut buf = [0u8; 64];
+    let mut buf = [0u8; 128];
 
     let n = socket.read(&mut buf).await?;
 
     let req = data::decode(&buf[..n]);
 
     match req {
-        WorkerRequest::Summary(query) => summary::process(socket, store, buf, query).await?,
+        WorkerRequest::Summary(query) => summary::process(socket, store, query, &mut buf).await?,
         WorkerRequest::Payment(req) => {
             tracing::debug!("sending to req_channel");
             tx.send_async(req).await?;
