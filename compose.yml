@@ -8,8 +8,8 @@ x-api_template: &api
   deploy:
     resources:
       limits:
-        cpus: "0.35"
-        memory: "60MB"
+        cpus: "0.4"
+        memory: "80MB"
 
 services:
   api_0:
@@ -40,8 +40,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.3"
-          memory: "150MB"
+          cpus: "0.2"
+          memory: "110MB"
 
   nginx:
     image: nginx:latest
