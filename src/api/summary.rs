@@ -23,6 +23,7 @@ pub async fn get_summary(query: (i64, i64), buf: &mut [u8]) -> Result<usize> {
 
 pub struct Summary {
     pub default: ProcessedData,
+    #[allow(dead_code)]
     pub fallback: ProcessedData,
 }
 

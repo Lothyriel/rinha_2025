@@ -58,7 +58,6 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
 
         if n == 0 {
             socket.shutdown().await?;
-            tracing::info!("socket closed");
             return Ok(());
         }
 

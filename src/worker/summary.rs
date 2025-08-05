@@ -14,7 +14,7 @@ pub async fn process(
 
     let summary = store.get(query);
 
-    let n = build_payload(buf, summary.default.count, summary.fallback.amount)?;
+    let n = build_payload(buf, summary.default.count, summary.default.amount)?;
 
     socket.write_all(&buf[..n]).await?;
 
@@ -26,7 +26,7 @@ fn build_payload(buf: &mut [u8], count: u64, amount: f32) -> Result<usize> {
 
     write!(
         writer,
-        r#"{{"default":{{"totalRequests":{count},"totalAmount":{amount}}},"fallback":{{"totalRequests":0,"totalAmount":0.0}}"#,
+        r#"{{"default":{{"totalRequests":{count},"totalAmount":{amount}}},"fallback":{{"totalRequests":0,"totalAmount":0.0}}}}"#,
     )?;
 
     Ok(writer.position() as usize)
