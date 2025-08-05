@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use metrics::Unit;
-use parking_lot::RwLock;
+use tokio::sync::RwLock;
 
 use crate::{api::summary::Summary, data::Payment};
 
@@ -17,22 +17,22 @@ impl Store {
         }
     }
 
-    pub fn insert(&self, payment: Payment) {
+    pub async fn insert(&self, payment: Payment) {
         let now = Instant::now();
 
         {
-            self.payments.write().push(payment);
+            self.payments.write().await.push(payment);
         }
 
         metrics::describe_histogram!("db.insert", Unit::Nanoseconds, "db insert time");
         metrics::histogram!("db.insert").record(now.elapsed().as_nanos() as f64);
     }
 
-    pub fn get(&self, (from, to): (i64, i64)) -> Summary {
+    pub async fn get(&self, (from, to): (i64, i64)) -> Summary {
         let now = Instant::now();
 
         let summary = {
-            let payments = self.payments.read();
+            let payments = self.payments.read().await;
 
             let start = payments
                 .binary_search_by_key(&from, |p| p.requested_at)
@@ -55,7 +55,7 @@ impl Store {
         Summary::new([summary, (0, 0)])
     }
 
-    pub fn purge(&self) {
-        self.payments.write().clear();
+    pub async fn purge(&self) {
+        self.payments.write().await.clear();
     }
 }

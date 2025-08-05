@@ -3,13 +3,12 @@ use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
 
-pub async fn send(payment: Request) -> Result<()> {
+pub async fn send(buf: &mut [u8], payment: Request) -> Result<()> {
     tracing::debug!(payment.correlation_id, "uds_send");
 
     let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
 
-    let mut buf = [0u8; 64];
-    let n = data::encode(WorkerRequest::Payment(payment), &mut buf);
+    let n = data::encode(WorkerRequest::Payment(payment), buf);
 
     socket.write_all(&buf[..n]).await?;
 

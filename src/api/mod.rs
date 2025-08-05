@@ -17,15 +17,25 @@ use crate::bind_unix_socket;
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
 
+    let (tx, rx) = flume::unbounded();
+
+    tokio::spawn(async move {
+        if let Err(err) = consumer(rx).await {
+            tracing::error!(?err, "http_consumer");
+        }
+    });
+
     match std::env::var("NGINX_SOCKET").ok() {
         Some(f) => {
             let listener = bind_unix_socket(&f)?;
             tracing::info!("binded to unix socket on {f}");
 
             loop {
+                let tx = tx.clone();
                 let (socket, _) = listener.accept().await?;
+
                 tokio::spawn(async {
-                    if let Err(err) = handle_http(socket).await {
+                    if let Err(err) = handle_http(socket, tx).await {
                         tracing::error!(?err, "http_err");
                     }
                 });
@@ -37,9 +47,11 @@ pub async fn serve() -> Result<()> {
             tracing::info!("binding to network socket on {PORT}");
 
             loop {
+                let tx = tx.clone();
                 let (socket, _) = listener.accept().await?;
+
                 tokio::spawn(async {
-                    if let Err(err) = handle_http(socket).await {
+                    if let Err(err) = handle_http(socket, tx).await {
                         tracing::error!(?err, "http_err");
                     }
                 });
@@ -48,9 +60,20 @@ pub async fn serve() -> Result<()> {
     };
 }
 
+async fn consumer(rx: flume::Receiver<[u8; 512]>) -> Result<()> {
+    loop {
+        let mut buf = rx.recv_async().await?;
+
+        handle_payment(&mut buf).await?
+    }
+}
+
 const OK_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
 
-async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result<()> {
+async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(
+    mut socket: T,
+    tx: flume::Sender<[u8; 512]>,
+) -> Result<()> {
     let mut buf = [0u8; 512];
 
     loop {
@@ -96,11 +119,7 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
                     );
                     metrics::histogram!("http.post").record(now.elapsed().as_micros() as f64);
 
-                    tokio::spawn(async move {
-                        if let Err(err) = handle_payment(&buf).await {
-                            tracing::error!(?err, "handle_payment");
-                        }
-                    });
+                    tx.send_async(buf).await?;
                 }
                 // POST /p[u]rge-payments
                 b'u' => {
@@ -119,7 +138,7 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(mut socket: T) -> Result
     }
 }
 
-async fn handle_payment(buf: &[u8]) -> Result<(), anyhow::Error> {
+async fn handle_payment(buf: &mut [u8]) -> Result<(), anyhow::Error> {
     let start = buf
         .iter()
         .position(|&b| b == b'{')
@@ -130,7 +149,7 @@ async fn handle_payment(buf: &[u8]) -> Result<(), anyhow::Error> {
     let req = &buf[start..end + 1];
     let req = serde_json::from_slice(req)?;
 
-    payment::send(req).await?;
+    payment::send(buf, req).await?;
 
     Ok(())
 }

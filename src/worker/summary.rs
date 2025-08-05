@@ -12,7 +12,7 @@ pub async fn process(
 ) -> Result<()> {
     tracing::debug!("handling get_summary");
 
-    let summary = store.get(query);
+    let summary = store.get(query).await;
 
     let n = build_payload(buf, summary.default.count, summary.default.amount)?;
 

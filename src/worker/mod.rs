@@ -25,35 +25,19 @@ pub async fn serve() -> Result<()> {
 
     let store = db::Store::new();
 
-    let db_tx = start_db_consumer(store.clone());
-
-    let req_tx = start_http_workers(db_tx);
+    let req_tx = start_http_workers(store.clone());
 
     uds_listen(req_tx, store).await
 }
 
-fn start_db_consumer(store: db::Store) -> PaymentTx {
-    let (tx, rx) = flume::unbounded();
-
-    tracing::info!("starting db_consumer");
-
-    tokio::spawn(async move {
-        if let Err(err) = handle_completed_payments(store, rx).await {
-            tracing::error!(?err, "db_consumer_err");
-        }
-    });
-
-    tx
-}
-
-fn start_http_workers(payment_tx: PaymentTx) -> RequestTx {
+fn start_http_workers(store: db::Store) -> Sender {
     let (tx, rx) = flume::unbounded();
 
     tracing::info!("starting payment_req_consumer");
     let client = Client::new();
 
     for _ in 0..*HTTP_WORKERS {
-        let worker = start_http_worker(payment_tx.clone(), tx.clone(), rx.clone(), client.clone());
+        let worker = start_http_worker(store.clone(), tx.clone(), rx.clone(), client.clone());
         tokio::spawn(async {
             if let Err(err) = worker.await {
                 tracing::error!(?err, "http_worker_err")
@@ -65,17 +49,17 @@ fn start_http_workers(payment_tx: PaymentTx) -> RequestTx {
 }
 
 async fn start_http_worker(
-    payment_tx: PaymentTx,
-    tx: RequestTx,
-    rx: RequestRx,
+    store: db::Store,
+    tx: Sender,
+    rx: Receiver,
     client: Client,
 ) -> Result<()> {
     loop {
         let client = client.clone();
-        let payment_tx = payment_tx.clone();
+        let store = store.clone();
 
         let req = rx.recv_async().await?;
-        let result = payment::process(payment_tx, client, req.clone()).await;
+        let result = payment::process(store, client, req.clone()).await;
 
         if let Err(err) = result {
             tracing::debug!(?err, "pp_client_err");
@@ -84,7 +68,7 @@ async fn start_http_worker(
     }
 }
 
-async fn uds_listen(tx: RequestTx, store: db::Store) -> Result<()> {
+async fn uds_listen(tx: Sender, store: db::Store) -> Result<()> {
     let listener = bind_unix_socket(&WORKER_SOCKET)?;
 
     tracing::info!("listening on {}", &*WORKER_SOCKET);
@@ -103,7 +87,7 @@ async fn uds_listen(tx: RequestTx, store: db::Store) -> Result<()> {
     }
 }
 
-async fn handle_uds(tx: RequestTx, mut socket: UnixStream, store: db::Store) -> Result<()> {
+async fn handle_uds(tx: Sender, mut socket: UnixStream, store: db::Store) -> Result<()> {
     let now = Instant::now();
 
     let mut buf = [0u8; 128];
@@ -118,7 +102,7 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream, store: db::Store) -> 
             tracing::debug!("sending to req_channel");
             tx.send_async(req).await?;
         }
-        WorkerRequest::PurgeDb => purge_db(store)?,
+        WorkerRequest::PurgeDb => purge_db(store).await?,
     }
 
     metrics::describe_histogram!("uds.handle", Unit::Microseconds, "http handler time");
@@ -127,18 +111,8 @@ async fn handle_uds(tx: RequestTx, mut socket: UnixStream, store: db::Store) -> 
     Ok(())
 }
 
-async fn handle_completed_payments(writer: db::Store, rx: PaymentRx) -> Result<()> {
-    loop {
-        let payment = rx.recv_async().await?;
-
-        tracing::debug!("completed_payments_recv");
-
-        writer.insert(payment);
-    }
-}
-
-fn purge_db(store: db::Store) -> Result<()> {
-    store.purge();
+async fn purge_db(store: db::Store) -> Result<()> {
+    store.purge().await;
 
     tracing::info!("db purged");
 
@@ -152,8 +126,5 @@ pub enum WorkerRequest {
     PurgeDb,
 }
 
-type PaymentTx = flume::Sender<data::Payment>;
-type PaymentRx = flume::Receiver<data::Payment>;
-
-type RequestTx = flume::Sender<api::payment::Request>;
-type RequestRx = flume::Receiver<api::payment::Request>;
+type Sender = flume::Sender<api::payment::Request>;
+type Receiver = flume::Receiver<api::payment::Request>;
