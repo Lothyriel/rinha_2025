@@ -33,10 +33,6 @@ services:
     command: ["-m", "worker"]
     environment:
       RUST_LOG: "info"
-    ulimits:
-      nofile:
-        soft: 16384
-        hard: 16384
     deploy:
       resources:
         limits:
