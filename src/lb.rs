@@ -19,10 +19,10 @@ static BACKENDS: Lazy<Vec<String>> = Lazy::new(|| match data::get_api_n() {
 });
 
 const OK_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
-const BUFFER_POOL_SIZE: usize = 10_000;
+const BUFFER_POOL_SIZE: usize = 1024;
+const BUFFER_SIZE: usize = 512;
 
 static CONN_COUNT: AtomicUsize = AtomicUsize::new(0);
-static REQ_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub fn serve() -> Result<()> {
     tokio_uring::start(async {
@@ -43,7 +43,11 @@ async fn start() -> Result<()> {
 
     tracing::info!("api instances {:?}", *BACKENDS);
 
-    let registry = FixedBufRegistry::new(std::iter::repeat_n(vec![0; 512], BUFFER_POOL_SIZE));
+    let buffers = std::iter::repeat_with(|| Vec::with_capacity(BUFFER_SIZE)).take(BUFFER_POOL_SIZE);
+
+    tracing::info!("allocating {BUFFER_POOL_SIZE} {BUFFER_SIZE}B buffers");
+
+    let registry = FixedBufRegistry::new(buffers);
 
     registry.register()?;
 
@@ -60,16 +64,17 @@ async fn start() -> Result<()> {
 }
 
 async fn handle_connection(registry: FixedBufRegistry<Vec<u8>>, tcp: TcpStream) -> Result<()> {
-    let backend = &BACKENDS[CONN_COUNT.fetch_add(1, Ordering::Relaxed) % BACKENDS.len()];
+    let c = CONN_COUNT.fetch_add(1, Ordering::Relaxed);
+    let backend = &BACKENDS[c % BACKENDS.len()];
 
     let unix = UnixStream::connect(backend).await?;
 
-    loop {
-        let buf = registry
-            .check_out(REQ_COUNT.fetch_add(1, Ordering::AcqRel) % BUFFER_POOL_SIZE)
-            .ok_or_else(|| anyhow::anyhow!("buf unavailable"))?;
+    let mut buffer = registry
+        .check_out(c % BUFFER_POOL_SIZE)
+        .ok_or_else(|| anyhow::anyhow!("buf {c} unavailable"))?;
 
-        let (r, buf) = tcp.read_fixed(buf).await;
+    loop {
+        let (r, buf) = tcp.read_fixed(buffer).await;
         let now = Instant::now();
         let n = r?;
 
@@ -77,7 +82,7 @@ async fn handle_connection(registry: FixedBufRegistry<Vec<u8>>, tcp: TcpStream) 
             return Ok(());
         }
 
-        match buf[0] {
+        buffer = match buf[0] {
             // [G]ET /payments-summary
             b'G' => {
                 let (r, buf) = unix.write_all(buf.slice(..n)).await;
@@ -87,11 +92,13 @@ async fn handle_connection(registry: FixedBufRegistry<Vec<u8>>, tcp: TcpStream) 
                 let (r, buf) = unix.read(buf).await;
                 let n = r?;
 
-                let (r, _) = tcp.write_fixed_all(buf.slice(..n)).await;
+                let (r, buf) = tcp.write_fixed_all(buf.slice(..n)).await;
                 r?;
 
                 metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
                 metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
+
+                buf.into_inner()
             }
             // [P]OST
             b'P' => {
@@ -103,11 +110,14 @@ async fn handle_connection(registry: FixedBufRegistry<Vec<u8>>, tcp: TcpStream) 
                 metrics::describe_histogram!("http.post", Unit::Microseconds, "http handler time");
                 metrics::histogram!("http.post").record(now.elapsed().as_micros() as f64);
 
-                let (r, _) = unix.write_all(buf.slice(..n)).await;
+                let (r, buf) = unix.write_all(buf.slice(..n)).await;
                 r?;
+
+                buf.into_inner()
             }
             _ => {
-                tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf));
+                tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf[..n]));
+                buf
             }
         }
     }
