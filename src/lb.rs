@@ -74,8 +74,6 @@ async fn handle_connection(
         let n = r?;
 
         if n == 0 {
-            tcp.shutdown(std::net::Shutdown::Both)?;
-            tracing::warn!("disconnected");
             return Ok(());
         }
 

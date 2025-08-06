@@ -44,7 +44,6 @@ async fn handle_http(mut socket: UnixStream) -> Result<()> {
         let n = socket.read(&mut buf).await?;
 
         if n == 0 {
-            socket.shutdown().await?;
             return Ok(());
         }
 
