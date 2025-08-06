@@ -35,12 +35,14 @@ services:
     environment:
       API_N: "0"
       RUST_LOG: "info"
+      WORKER_SOCKET: "/var/run/worker.socket"
 
   api_1:
     <<: *api
     environment:
       API_N: "1"
       RUST_LOG: "info"
+      WORKER_SOCKET: "/var/run/worker.socket"
 
   worker:
     image: localhost/rinha
@@ -50,7 +52,7 @@ services:
     volumes:
       - uds:/var/run
     environment:
-      SOCKET: "/var/run/worker.socket"
+      WORKER_SOCKET: "/var/run/worker.socket"
       RUST_LOG: "info"
     deploy:
       resources:
