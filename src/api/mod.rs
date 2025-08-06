@@ -2,79 +2,42 @@ pub mod payment;
 pub mod summary;
 mod util;
 
-use std::{io::IoSlice, net::Ipv4Addr, time::Instant};
+use std::io::IoSlice;
 
 use anyhow::Result;
 use chrono::DateTime;
-use metrics::Unit;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    net::TcpListener,
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::UnixStream,
 };
 
-use crate::bind_unix_socket;
+use crate::{bind_unix_socket, data};
+
+pub const API_SOCK: &str = "./api.sock";
 
 #[tokio::main]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
 
-    let (tx, rx) = flume::unbounded();
+    let socket = data::get_api_n()
+        .map(data::get_api_socket_name)
+        .unwrap_or(API_SOCK.to_string());
 
-    tokio::spawn(async move {
-        if let Err(err) = consumer(rx).await {
-            tracing::error!(?err, "http_consumer");
-        }
-    });
+    let listener = bind_unix_socket(&socket)?;
+    tracing::info!("binded to unix socket on {socket}");
 
-    match std::env::var("NGINX_SOCKET").ok() {
-        Some(f) => {
-            let listener = bind_unix_socket(&f)?;
-            tracing::info!("binded to unix socket on {f}");
-
-            loop {
-                let tx = tx.clone();
-                let (socket, _) = listener.accept().await?;
-
-                tokio::spawn(async {
-                    if let Err(err) = handle_http(socket, tx).await {
-                        tracing::error!(?err, "http_err");
-                    }
-                });
-            }
-        }
-        None => {
-            const PORT: u16 = 9999;
-            let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, PORT)).await?;
-            tracing::info!("binding to network socket on {PORT}");
-
-            loop {
-                let tx = tx.clone();
-                let (socket, _) = listener.accept().await?;
-
-                tokio::spawn(async {
-                    if let Err(err) = handle_http(socket, tx).await {
-                        tracing::error!(?err, "http_err");
-                    }
-                });
-            }
-        }
-    };
-}
-
-async fn consumer(rx: flume::Receiver<[u8; 512]>) -> Result<()> {
     loop {
-        let mut buf = rx.recv_async().await?;
+        let (socket, _) = listener.accept().await?;
 
-        handle_payment(&mut buf).await?
+        tokio::spawn(async {
+            if let Err(err) = handle_http(socket).await {
+                tracing::error!(?err, "http_err");
+            }
+        });
     }
 }
 
-const OK_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
-
-async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(
-    mut socket: T,
-    tx: flume::Sender<[u8; 512]>,
-) -> Result<()> {
+async fn handle_http(mut socket: UnixStream) -> Result<()> {
     let mut buf = [0u8; 512];
 
     loop {
@@ -88,8 +51,6 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(
         match buf[0] {
             // [G]ET /payments-summary
             b'G' => {
-                let now = Instant::now();
-
                 let n = get_summary(&mut buf).await?;
                 let body_len = n.to_string();
 
@@ -101,31 +62,13 @@ async fn handle_http<T: AsyncRead + AsyncWrite + Unpin>(
                 ];
 
                 _ = socket.write_vectored(res).await?;
-
-                metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
-                metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
             }
             // [P]OST
             b'P' => match buf[7] {
                 // POST /p[a]yments
-                b'a' => {
-                    let now = Instant::now();
-
-                    socket.write_all(OK_RES).await?;
-
-                    metrics::describe_histogram!(
-                        "http.post",
-                        Unit::Microseconds,
-                        "http handler time"
-                    );
-                    metrics::histogram!("http.post").record(now.elapsed().as_micros() as f64);
-
-                    tx.send_async(buf).await?;
-                }
+                b'a' => handle_payment(&mut buf).await?,
                 // POST /p[u]rge-payments
                 b'u' => {
-                    socket.write_all(OK_RES).await?;
-
                     util::purge().await?;
                 }
                 _ => {
