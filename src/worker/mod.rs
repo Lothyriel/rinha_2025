@@ -69,7 +69,7 @@ async fn start_http_worker(
 async fn uds_listen(tx: Sender, store: db::Store) -> Result<()> {
     let listener = bind_unix_socket(&WORKER_SOCKET)?;
 
-    tracing::info!("listening on {}", &*WORKER_SOCKET);
+    tracing::info!("listening on {}", *WORKER_SOCKET);
 
     loop {
         let tx = tx.clone();

@@ -54,6 +54,7 @@ async fn start() -> Result<()> {
     loop {
         let registry = registry.clone();
         let (client, _) = listener.accept().await?;
+        client.set_nodelay(true)?;
 
         tokio_uring::spawn(async move {
             if let Err(err) = handle_connection(registry, client).await {
