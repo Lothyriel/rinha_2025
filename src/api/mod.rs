@@ -29,6 +29,9 @@ pub async fn serve() -> Result<()> {
     loop {
         let (socket, _) = listener.accept().await?;
 
+        let counter = metrics::counter!("http.conn");
+        counter.increment(1);
+
         tokio::spawn(async {
             if let Err(err) = handle_http(socket).await {
                 tracing::error!(?err, "http_err");
@@ -42,6 +45,9 @@ async fn handle_http(mut socket: UnixStream) -> Result<()> {
 
     loop {
         let n = socket.read(&mut buf).await?;
+
+        let counter = metrics::counter!("http.req");
+        counter.increment(1);
 
         if n == 0 {
             return Ok(());
