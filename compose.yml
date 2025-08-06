@@ -19,6 +19,8 @@ services:
       - "9999:9999"
     volumes:
       - uds:/var/run
+    security_opt:
+      - seccomp=unconfined
     depends_on:
       - api_0
       - api_1
