@@ -21,6 +21,9 @@ static BACKENDS: Lazy<Vec<String>> = Lazy::new(|| match data::get_api_n() {
 const OK_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
 const BUFFER_POOL_SIZE: usize = 10_000;
 
+static CONN_COUNT: AtomicUsize = AtomicUsize::new(0);
+static REQ_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 pub fn serve() -> Result<()> {
     tokio_uring::start(async {
         if let Err(err) = start().await {
@@ -44,34 +47,26 @@ async fn start() -> Result<()> {
 
     registry.register()?;
 
-    let count = AtomicUsize::new(0);
-
     loop {
         let registry = registry.clone();
         let (client, _) = listener.accept().await?;
 
-        let count = count.fetch_add(1, Ordering::Relaxed);
-
         tokio_uring::spawn(async move {
-            if let Err(err) = handle_connection(registry, client, count).await {
+            if let Err(err) = handle_connection(registry, client).await {
                 tracing::error!(?err, "handle_conn");
             }
         });
     }
 }
 
-async fn handle_connection(
-    registry: FixedBufRegistry<Vec<u8>>,
-    tcp: TcpStream,
-    count: usize,
-) -> Result<()> {
-    let backend = &BACKENDS[count % BACKENDS.len()];
+async fn handle_connection(registry: FixedBufRegistry<Vec<u8>>, tcp: TcpStream) -> Result<()> {
+    let backend = &BACKENDS[CONN_COUNT.fetch_add(1, Ordering::Relaxed) % BACKENDS.len()];
 
     let unix = UnixStream::connect(backend).await?;
 
     loop {
         let buf = registry
-            .check_out(count % BUFFER_POOL_SIZE)
+            .check_out(REQ_COUNT.fetch_add(1, Ordering::Relaxed) % BUFFER_POOL_SIZE)
             .ok_or_else(|| anyhow::anyhow!("buf unavailable"))?;
 
         let (r, buf) = tcp.read_fixed(buf).await;
