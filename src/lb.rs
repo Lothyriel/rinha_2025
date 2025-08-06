@@ -66,7 +66,7 @@ async fn handle_connection(registry: FixedBufRegistry<Vec<u8>>, tcp: TcpStream) 
 
     loop {
         let buf = registry
-            .check_out(REQ_COUNT.fetch_add(1, Ordering::Relaxed) % BUFFER_POOL_SIZE)
+            .check_out(REQ_COUNT.fetch_add(1, Ordering::AcqRel) % BUFFER_POOL_SIZE)
             .ok_or_else(|| anyhow::anyhow!("buf unavailable"))?;
 
         let (r, buf) = tcp.read_fixed(buf).await;
