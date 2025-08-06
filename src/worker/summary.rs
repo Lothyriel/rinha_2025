@@ -10,7 +10,7 @@ pub async fn process(
     query: (i64, i64),
     buf: &mut [u8],
 ) -> Result<()> {
-    tracing::debug!("handling get_summary");
+    tracing::trace!("handling get_summary");
 
     let summary = store.get(query).await;
 

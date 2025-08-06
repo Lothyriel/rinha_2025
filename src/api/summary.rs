@@ -11,10 +11,10 @@ pub async fn get_summary(query: (i64, i64), buf: &mut [u8]) -> Result<usize> {
     tracing::debug!("connected to unix socket on {}", *WORKER_SOCKET);
 
     let n = data::encode(WorkerRequest::Summary(query), buf);
-    tracing::debug!("writing to {}", *WORKER_SOCKET);
+    tracing::trace!("writing to {}", *WORKER_SOCKET);
     socket.write_all(&buf[..n]).await?;
 
-    tracing::debug!("reading from {}", *WORKER_SOCKET);
+    tracing::trace!("reading from {}", *WORKER_SOCKET);
 
     let n = socket.read(buf).await?;
 

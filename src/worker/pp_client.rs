@@ -34,7 +34,7 @@ pub async fn send(client: &Client, payment: payment::Request) -> Result<Payment>
     //for (id, uri) in PAYMENT_PROCESSORS {
     let (id, uri) = &(*PAYMENT_PROCESSORS)[0];
 
-    tracing::debug!(pp_id = id, "sending to payment-processor");
+    tracing::trace!(pp_id = id, "sending to payment-processor");
 
     http_send(uri, client, &payment).await?;
 

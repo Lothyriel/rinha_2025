@@ -4,7 +4,7 @@ use tokio::{io::AsyncWriteExt, net::UnixStream};
 use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
 
 pub async fn send(buf: &mut [u8], payment: Request) -> Result<()> {
-    tracing::debug!(payment.correlation_id, "uds_send");
+    tracing::trace!(payment.correlation_id, "uds_send");
 
     let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
 

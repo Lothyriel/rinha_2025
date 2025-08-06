@@ -100,7 +100,7 @@ async fn handle_uds(tx: Sender, mut socket: UnixStream, store: db::Store) -> Res
     match req {
         WorkerRequest::Summary(query) => summary::process(socket, store, query, &mut buf).await?,
         WorkerRequest::Payment(req) => {
-            tracing::debug!("sending to req_channel");
+            tracing::trace!("sending to req_channel");
             tx.send_async(req).await?;
         }
         WorkerRequest::PurgeDb => purge_db(store).await?,
