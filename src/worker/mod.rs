@@ -56,11 +56,8 @@ async fn start_http_worker(
     client: Client,
 ) -> Result<()> {
     loop {
-        let client = client.clone();
-        let store = store.clone();
-
         let req = rx.recv_async().await?;
-        let result = payment::process(store, client, req.clone()).await;
+        let result = payment::process(store.clone(), client.clone(), req.clone()).await;
 
         if let Err(err) = result {
             tracing::debug!(?err, "pp_client_err");
@@ -77,6 +74,7 @@ async fn uds_listen(tx: Sender, store: db::Store) -> Result<()> {
     loop {
         let tx = tx.clone();
         let store = store.clone();
+
         let (socket, _) = listener.accept().await?;
         tracing::debug!("accepted unix socket connection");
 

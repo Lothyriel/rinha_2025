@@ -19,7 +19,7 @@ static BACKENDS: Lazy<Vec<String>> = Lazy::new(|| match data::get_api_n() {
 });
 
 const OK_RES: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
-const BUFFER_POOL_SIZE: usize = 500;
+const BUFFER_POOL_SIZE: usize = 10_000;
 
 pub fn serve() -> Result<()> {
     tokio_uring::start(async {
@@ -47,11 +47,16 @@ async fn start() -> Result<()> {
     let count = AtomicUsize::new(0);
 
     loop {
+        let registry = registry.clone();
         let (client, _) = listener.accept().await?;
 
         let count = count.fetch_add(1, Ordering::Relaxed);
 
-        tokio_uring::spawn(handle_connection(registry.clone(), client, count));
+        tokio_uring::spawn(async move {
+            if let Err(err) = handle_connection(registry, client, count).await {
+                tracing::error!(?err, "handle_conn");
+            }
+        });
     }
 }
 
