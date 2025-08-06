@@ -1,6 +1,7 @@
 mod api;
 mod data;
 mod db;
+mod lb;
 mod worker;
 
 use std::{fs::Permissions, os::unix::fs::PermissionsExt, time::Duration};
@@ -12,13 +13,12 @@ use once_cell::sync::Lazy;
 use tokio::net::UnixListener;
 use tracing_subscriber::{EnvFilter, fmt::layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     init_tracing();
 
     init_metrics();
 
-    serve(Args::parse()).await
+    serve(Args::parse())
 }
 
 #[global_allocator]
@@ -57,10 +57,11 @@ fn init_tracing() {
     tracing_subscriber::registry().with(filter).with(fmt).init();
 }
 
-async fn serve(args: Args) {
+fn serve(args: Args) {
     let result = match args.mode.as_str() {
-        "api" => api::serve().await,
-        "worker" => worker::serve().await,
+        "api" => api::serve(),
+        "worker" => worker::serve(),
+        "lb" => lb::serve(),
         _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
     };
 
@@ -72,12 +73,12 @@ async fn serve(args: Args) {
 #[derive(Parser)]
 #[command(about = "Rinha 2025")]
 struct Args {
-    #[arg(short = 'm', value_parser = ["api", "worker"], help = "The mode in which the binary will run")]
+    #[arg(short = 'm', value_parser = ["api", "worker", "lb"], help = "The mode in which the binary will run")]
     mode: String,
 }
 
 static WORKER_SOCKET: Lazy<String> =
-    Lazy::new(|| std::env::var("WORKER_SOCKET").unwrap_or("/var/run/rinha.sock".to_string()));
+    Lazy::new(|| std::env::var("SOCKET").unwrap_or("./worker.sock".to_string()));
 
 fn bind_unix_socket(file: &str) -> Result<UnixListener> {
     std::fs::remove_file(file).ok();

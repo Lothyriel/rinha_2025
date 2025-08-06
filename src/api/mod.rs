@@ -14,6 +14,7 @@ use tokio::{
 
 use crate::bind_unix_socket;
 
+#[tokio::main]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
 
