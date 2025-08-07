@@ -1,14 +1,19 @@
+use std::{
+    net::Ipv4Addr,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Instant,
+};
+
 use anyhow::Result;
 use metrics::Unit;
 use once_cell::sync::Lazy;
-use std::net::Ipv4Addr;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
-use std::time::Instant;
-use tokio_uring::buf::BoundedBuf;
-use tokio_uring::buf::fixed::FixedBufRegistry;
-use tokio_uring::net::UnixStream;
-use tokio_uring::net::{TcpListener, TcpStream};
+use tokio_uring::{
+    buf::{
+        BoundedBuf,
+        fixed::{FixedBuf, FixedBufRegistry},
+    },
+    net::{TcpListener, TcpStream, UnixStream},
+};
 
 use crate::api;
 use crate::data;
@@ -86,20 +91,12 @@ async fn handle_connection(registry: FixedBufRegistry<Vec<u8>>, tcp: TcpStream) 
         buffer = match buf[0] {
             // [G]ET /payments-summary
             b'G' => {
-                let (r, buf) = unix.write_all(buf.slice(..n)).await;
-                let buf = buf.into_inner();
-                r?;
-
-                let (r, buf) = unix.read(buf).await;
-                let n = r?;
-
-                let (r, buf) = tcp.write_fixed_all(buf.slice(..n)).await;
-                r?;
+                let buf = get(&tcp, &unix, buf, n).await?;
 
                 metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
                 metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
 
-                buf.into_inner()
+                buf
             }
             // [P]OST
             b'P' => {
@@ -122,4 +119,18 @@ async fn handle_connection(registry: FixedBufRegistry<Vec<u8>>, tcp: TcpStream) 
             }
         }
     }
+}
+
+async fn get(tcp: &TcpStream, unix: &UnixStream, buf: FixedBuf, n: usize) -> Result<FixedBuf> {
+    let (r, buf) = unix.write_all(buf.slice(..n)).await;
+    let buf = buf.into_inner();
+    r?;
+
+    let (r, buf) = unix.read(buf).await;
+    let n = r?;
+
+    let (r, buf) = tcp.write_fixed_all(buf.slice(..n)).await;
+    r?;
+
+    Ok(buf.into_inner())
 }

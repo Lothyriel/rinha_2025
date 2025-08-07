@@ -1,8 +1,9 @@
-use anyhow::Result;
 use std::{
     io::{Cursor, Write},
     time::Duration,
 };
+
+use anyhow::Result;
 use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 use crate::db;
