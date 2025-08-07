@@ -29,6 +29,10 @@ services:
       - api_1
     environment:
       API_N: "2"
+    ulimits:
+      nofile:
+        soft: 2048
+        hard: 2048
     deploy:
       resources:
         limits:
