@@ -1,5 +1,8 @@
 use anyhow::Result;
-use std::io::{Cursor, Write};
+use std::{
+    io::{Cursor, Write},
+    time::Duration,
+};
 use tokio::{io::AsyncWriteExt, net::UnixStream};
 
 use crate::db;
@@ -11,6 +14,8 @@ pub async fn process(
     buf: &mut [u8],
 ) -> Result<()> {
     tracing::trace!("handling get_summary");
+
+    tokio::time::sleep(Duration::from_millis(2)).await;
 
     let summary = store.get(query).await;
 
