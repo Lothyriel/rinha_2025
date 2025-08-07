@@ -134,3 +134,31 @@ fn get_query(buf: &[u8]) -> Result<(i64, i64)> {
 
     Ok((from.timestamp_micros(), to.timestamp_micros()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Utc};
+
+    #[test]
+    fn test_add() {
+        let input =
+            b"GET /payments-summary?from=2001-04-27T12:30:00.000Z&to=2025-05-27T15:37:50.000Z";
+
+        let date = NaiveDate::from_ymd_opt(2001, 4, 27).expect("valid date");
+        let time = NaiveTime::from_hms_opt(12, 30, 0).expect("valid time");
+        let datetime = NaiveDateTime::new(date, time);
+
+        let from: DateTime<Utc> = DateTime::from_naive_utc_and_offset(datetime, Utc);
+
+        let date = NaiveDate::from_ymd_opt(2025, 5, 27).expect("valid date");
+        let time = NaiveTime::from_hms_opt(15, 37, 50).expect("valid time");
+        let datetime = NaiveDateTime::new(date, time);
+
+        let to: DateTime<Utc> = DateTime::from_naive_utc_and_offset(datetime, Utc);
+
+        let result = get_query(input).expect("get query");
+
+        assert_eq!(result, (from.timestamp_micros(), to.timestamp_micros()));
+    }
+}
