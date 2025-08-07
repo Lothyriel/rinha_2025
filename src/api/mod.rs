@@ -103,14 +103,28 @@ async fn handle_payment(buf: &mut [u8]) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-const DISTANT_FUTURE: DateTime<chrono::Utc> = DateTime::from_timestamp_nanos(i64::MAX);
-
 async fn get_summary(buf: &mut [u8]) -> Result<usize> {
-    const RFC_3339_SIZE: usize = 24;
-    const TO_OFFSET: usize = 27 + RFC_3339_SIZE + 2 + 2;
+    let query = get_query(buf)?;
 
-    let from = &buf[27..27 + RFC_3339_SIZE];
-    let to = &buf[TO_OFFSET..TO_OFFSET + RFC_3339_SIZE];
+    summary::get_summary(query, buf).await
+}
+
+fn get_query(buf: &[u8]) -> Result<(i64, i64)> {
+    const DISTANT_FUTURE: DateTime<chrono::Utc> = DateTime::from_timestamp_nanos(i64::MAX);
+
+    const RFC_3339_SIZE: usize = "2001-04-27T15:30:05.000Z".len();
+    const QUERY_STRING_OFFSET: usize = "GET /payments-summary".len();
+
+    const FROM_FIELD_SIZE: usize = "?from=".len();
+    const FROM_START: usize = QUERY_STRING_OFFSET + FROM_FIELD_SIZE;
+    const FROM_END: usize = FROM_START + RFC_3339_SIZE;
+
+    const TO_FIELD_SIZE: usize = "&to=".len();
+    const TO_START: usize = FROM_END + TO_FIELD_SIZE;
+    const TO_END: usize = TO_START + RFC_3339_SIZE;
+
+    let from = &buf[FROM_START..FROM_END];
+    let to = &buf[TO_START..TO_END];
 
     let from = std::str::from_utf8(from)?;
     let to = std::str::from_utf8(to)?;
@@ -118,7 +132,5 @@ async fn get_summary(buf: &mut [u8]) -> Result<usize> {
     let from = DateTime::parse_from_rfc3339(from).unwrap_or_default();
     let to = DateTime::parse_from_rfc3339(to).unwrap_or(DISTANT_FUTURE.into());
 
-    let query = (from.timestamp_micros(), to.timestamp_micros());
-
-    summary::get_summary(query, buf).await
+    Ok((from.timestamp_micros(), to.timestamp_micros()))
 }
