@@ -15,7 +15,7 @@ use crate::{bind_unix_socket, data};
 
 pub const API_SOCK: &str = "./api.sock";
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
 
