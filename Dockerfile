@@ -13,11 +13,10 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release
 
-FROM debian:stable-slim AS runtime
-RUN apt-get update && apt-get install tini=0.19.0-1 -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /target/release/rinha /
+FROM gcr.io/distroless/cc-debian12 AS runtime
+COPY --from=builder /target/release/rinha /usr/local/bin/
 
-ENTRYPOINT ["/usr/bin/tini", "--", "./rinha"]
+ENTRYPOINT ["rinha"]
 CMD []
 
 EXPOSE 9999

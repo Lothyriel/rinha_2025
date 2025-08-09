@@ -3,6 +3,7 @@ x-api_template: &api
   volumes:
     - uds:/var/run
   command: ["-m", "api"]
+  init: true
   depends_on:
     - worker
   environment:
@@ -47,6 +48,7 @@ services:
   worker:
     image: localhost/rinha
     command: ["-m", "worker"]
+    init: true
     networks:
       - payment-processor
     volumes:
