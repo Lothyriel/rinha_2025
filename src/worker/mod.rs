@@ -20,7 +20,7 @@ static HTTP_WORKERS: Lazy<u8> = Lazy::new(|| {
         .unwrap_or(2)
 });
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting worker");
 
