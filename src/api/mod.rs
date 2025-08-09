@@ -75,6 +75,9 @@ async fn handle_http(mut socket: UnixStream) -> Result<()> {
                 // POST /p[u]rge-payments
                 b'u' => {
                     util::purge().await?;
+                    socket
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                        .await?;
                 }
                 _ => {
                     tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf));
