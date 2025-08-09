@@ -11,17 +11,15 @@ use tokio::{
     net::UnixStream,
 };
 
-use crate::{bind_unix_socket, data};
-
-pub const API_SOCK: &str = "./api.sock";
+use crate::bind_unix_socket;
 
 #[tokio::main]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
 
-    let socket = data::get_api_n()
-        .map(data::get_api_socket_name)
-        .unwrap_or(API_SOCK.to_string());
+    let socket = std::env::var("API_N")
+        .map(|n| format!("/var/run/api{n}.sock"))
+        .unwrap_or("./api.sock".to_string());
 
     let listener = bind_unix_socket(&socket)?;
     tracing::info!("binded to unix socket on {socket}");
@@ -71,13 +69,14 @@ async fn handle_http(mut socket: UnixStream) -> Result<()> {
             // [P]OST
             b'P' => match buf[7] {
                 // POST /p[a]yments
-                b'a' => handle_payment(&mut buf).await?,
+                b'a' => {
+                    send_ok(&mut socket).await?;
+                    handle_payment(&mut buf).await?
+                }
                 // POST /p[u]rge-payments
                 b'u' => {
                     util::purge().await?;
-                    socket
-                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                        .await?;
+                    send_ok(&mut socket).await?;
                 }
                 _ => {
                     tracing::warn!("Invalid request {:?}", std::str::from_utf8(&buf));
@@ -88,6 +87,14 @@ async fn handle_http(mut socket: UnixStream) -> Result<()> {
             }
         }
     }
+}
+
+async fn send_ok(socket: &mut UnixStream) -> Result<()> {
+    socket
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        .await?;
+
+    Ok(())
 }
 
 async fn handle_payment(buf: &mut [u8]) -> Result<(), anyhow::Error> {

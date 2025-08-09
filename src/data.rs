@@ -4,14 +4,6 @@ use chrono::{DateTime, Utc};
 type BincodeConfig = Configuration<LittleEndian, Fixint, NoLimit>;
 const CONFIG: BincodeConfig = bincode::config::standard().with_fixed_int_encoding();
 
-pub fn get_api_socket_name(i: i32) -> String {
-    format!("/var/run/api{i}.sock")
-}
-
-pub fn get_api_n() -> Option<i32> {
-    std::env::var("API_N").ok().and_then(|n| n.parse().ok())
-}
-
 pub fn encode<S: serde::Serialize>(input: S, buf: &mut [u8]) -> usize {
     bincode::serde::encode_into_slice(&input, buf, CONFIG).expect("Failed to encode")
 }
