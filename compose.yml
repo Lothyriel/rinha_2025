@@ -15,38 +15,30 @@ x-api_template: &api
 
 services:
   lb:
-    image: localhost/rinha
-    command: ["-m", "lb"]
-    ports:
-      - "9999:9999"
+    container_name: balancer
+    image: openresty/openresty:bullseye
     volumes:
+      - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf
       - uds:/var/run
-    # io_uring is denied on rootless podman
-    security_opt:
-      - seccomp=unconfined
     depends_on:
-      - api_0
-      - api_1
-    environment:
-      API_N: "2"
-    ulimits:
-      nofile:
-        soft: 2048
-        hard: 2048
+      - api0
+      - api1
+    ports:
+      - "9999:80"
     deploy:
       resources:
         limits:
           cpus: "0.4"
           memory: "80MB"
 
-  api_0:
+  api0:
     <<: *api
     environment:
       API_N: "0"
       RUST_LOG: "info"
       WORKER_SOCKET: "/var/run/worker.socket"
 
-  api_1:
+  api1:
     <<: *api
     environment:
       API_N: "1"

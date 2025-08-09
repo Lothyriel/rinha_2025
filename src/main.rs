@@ -1,7 +1,6 @@
 mod api;
 mod data;
 mod db;
-mod lb;
 mod worker;
 
 use std::{fs::Permissions, os::unix::fs::PermissionsExt, time::Duration};
@@ -61,7 +60,6 @@ fn serve(args: Args) {
     let result = match args.mode.as_str() {
         "api" => api::serve(),
         "worker" => worker::serve(),
-        "lb" => lb::serve(),
         _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
     };
 
@@ -73,7 +71,7 @@ fn serve(args: Args) {
 #[derive(Parser)]
 #[command(about = "Rinha 2025")]
 struct Args {
-    #[arg(short = 'm', value_parser = ["api", "worker", "lb"], help = "The mode in which the binary will run")]
+    #[arg(short = 'm', value_parser = ["api", "worker"], help = "The mode in which the binary will run")]
     mode: String,
 }
 
