@@ -2,10 +2,11 @@ pub mod payment;
 pub mod summary;
 mod util;
 
-use std::io::IoSlice;
+use std::{io::IoSlice, time::Instant};
 
 use anyhow::Result;
 use chrono::DateTime;
+use metrics::Unit;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
@@ -43,9 +44,7 @@ async fn handle_http(mut socket: UnixStream) -> Result<()> {
 
     loop {
         let n = socket.read(&mut buf).await?;
-
-        let counter = metrics::counter!("http.req");
-        counter.increment(1);
+        let now = Instant::now();
 
         if n == 0 {
             return Ok(());
@@ -65,12 +64,24 @@ async fn handle_http(mut socket: UnixStream) -> Result<()> {
                 ];
 
                 _ = socket.write_vectored(res).await?;
+
+                metrics::describe_histogram!("http.get", Unit::Microseconds, "http handler time");
+                metrics::histogram!("http.get").record(now.elapsed().as_micros() as f64);
             }
             // [P]OST
             b'P' => match buf[7] {
                 // POST /p[a]yments
                 b'a' => {
                     send_ok(&mut socket).await?;
+
+                    metrics::describe_histogram!(
+                        "http.post",
+                        Unit::Microseconds,
+                        "http handler time"
+                    );
+
+                    metrics::histogram!("http.post").record(now.elapsed().as_micros() as f64);
+
                     handle_payment(&mut buf).await?
                 }
                 // POST /p[u]rge-payments
