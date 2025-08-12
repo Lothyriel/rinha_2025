@@ -7,7 +7,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 COPY --from=planner /recipe.json recipe.json
-ENV RUSTFLAGS="-C target-cpu=skylake"
+ENV RUSTFLAGS="-C target-cpu=znver2"
 RUN cargo chef cook --release --recipe-path recipe.json
 
 COPY . .
