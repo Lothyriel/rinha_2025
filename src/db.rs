@@ -13,7 +13,7 @@ pub struct Store {
 impl Store {
     pub fn new() -> Self {
         Self {
-            payments: Arc::new(RwLock::new(Vec::with_capacity(20_000))),
+            payments: Arc::new(RwLock::new(Vec::with_capacity(100_000))),
         }
     }
 
