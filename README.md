@@ -4,6 +4,7 @@ Implementação da Rinha de Backend 2025 utilizando:
 
 - [Rust](https://www.rust-lang.org/) apenas a melhor linguagem de todas
 - [UDS](https://en.wikipedia.org/wiki/Unix_domain_socket) unix domain sockets para comunicação IPC (evitando a network stack, especialmente na rede bridge do docker)
+- [Nginx](https://nginx.org/) load balancer ultra performático
 
 ---
 
@@ -15,23 +16,15 @@ config:
   layout: dagre
 ---
 flowchart TD
-    A[load balancer] <-->|uds HTTP| B(api0)
-    A[load balancer] <-->|uds HTTP| C(api1)
+    A[nginx] <-->|uds HTTP| B(api)
+    A[nginx] <-->|uds HTTP| C(api)
     C <-->|uds bincode| D[worker]
     B <-->|uds bincode| D[worker]
 ```
 
 ## Executando o binário
 
-Este projeto define um único binário que pode rodar em três modos:
-
-### Modo Load balancer
-
-Responsável por fazer a conexão e balanceamento das chamadas HTTP para unix sockets entre o client e e as instâncias de API.
-
-```bash
-cargo run --release -- -m lb
-```
+Este projeto define um único binário que pode rodar em dois modos:
 
 ### Modo API
 
