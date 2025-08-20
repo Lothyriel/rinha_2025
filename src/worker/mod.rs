@@ -1,24 +1,14 @@
-mod payment;
 mod pp_client;
 mod summary;
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use anyhow::Result;
 use metrics::Unit;
-use once_cell::sync::Lazy;
 use reqwest::Client;
 use tokio::{io::AsyncReadExt, net::UnixStream};
 
-use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db};
-
-// maybe tweak this value?
-static HTTP_WORKERS: Lazy<u8> = Lazy::new(|| {
-    std::env::var("HTTP_WORKERS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(2)
-});
+use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db, worker::pp_client::PaymentsManager};
 
 pub async fn serve() -> Result<()> {
     tracing::info!("starting worker");
@@ -33,11 +23,34 @@ pub async fn serve() -> Result<()> {
 fn start_http_workers(store: db::Store) -> Sender {
     let (tx, rx) = flume::unbounded();
 
-    tracing::info!("starting payment_req_consumer");
-    let client = Client::new();
+    let http_workers = std::env::var("HTTP_WORKERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16);
 
-    for _ in 0..*HTTP_WORKERS {
-        let worker = start_http_worker(store.clone(), tx.clone(), rx.clone(), client.clone());
+    let default = std::env::var("PROCESSOR_DEFAULT")
+        .unwrap_or("http://payment-processor-default:8080".to_string());
+
+    let fallback = std::env::var("PROCESSOR_FALLBACK")
+        .unwrap_or("http://payment-processor-fallback:8080".to_string());
+
+    let micros_cutout = std::env::var("PROCESSOR_CUTOUT")
+        .ok()
+        .and_then(|c| c.parse().ok())
+        .unwrap_or(100_000); //100ms
+
+    let reset_timeout = std::env::var("RESET_TIMEOUT")
+        .ok()
+        .and_then(|c| c.parse().ok())
+        .unwrap_or(6);
+
+    let manager = PaymentsManager::new(&default, &fallback, micros_cutout, store, &Client::new());
+
+    manager.start(reset_timeout);
+
+    tracing::info!("starting {http_workers} http_workers");
+    for _ in 0..http_workers {
+        let worker = start_http_worker(manager.clone(), tx.clone(), rx.clone());
         tokio::spawn(async {
             if let Err(err) = worker.await {
                 tracing::error!(?err, "http_worker_err")
@@ -48,15 +61,11 @@ fn start_http_workers(store: db::Store) -> Sender {
     tx
 }
 
-async fn start_http_worker(
-    store: db::Store,
-    tx: Sender,
-    rx: Receiver,
-    client: Client,
-) -> Result<()> {
+async fn start_http_worker(manager: Arc<PaymentsManager>, tx: Sender, rx: Receiver) -> Result<()> {
     loop {
         let req = rx.recv_async().await?;
-        let result = payment::process(store.clone(), client.clone(), req.clone()).await;
+
+        let result = manager.send(req.clone()).await;
 
         if let Err(err) = result {
             tracing::debug!(?err, "pp_client_err");
@@ -90,26 +99,32 @@ async fn handle_uds(tx: Sender, mut socket: UnixStream, store: db::Store) -> Res
 
     let mut buf = [0u8; 128];
 
-    let n = socket.read(&mut buf).await?;
+    loop {
+        let n = socket.read(&mut buf).await?;
 
-    let req = data::decode(&buf[..n]);
-
-    match req {
-        WorkerRequest::Summary(query) => summary::process(socket, store, query, &mut buf).await?,
-        WorkerRequest::Payment(req) => {
-            tracing::trace!("sending to req_channel");
-            tx.send_async(req).await?;
+        if n == 0 {
+            return Ok(());
         }
-        WorkerRequest::PurgeDb => purge_db(store).await?,
+
+        let req = data::decode(&buf[..n]);
+
+        match req {
+            WorkerRequest::Summary(query) => {
+                summary::process(&mut socket, &store, query, &mut buf).await?
+            }
+            WorkerRequest::Payment(req) => {
+                tracing::trace!("sending to req_channel");
+                tx.send_async(req).await?;
+            }
+            WorkerRequest::PurgeDb => purge_db(&store).await?,
+        }
+
+        metrics::describe_histogram!("uds.handle", Unit::Microseconds, "http handler time");
+        metrics::histogram!("uds.handle").record(now.elapsed().as_micros() as f64);
     }
-
-    metrics::describe_histogram!("uds.handle", Unit::Microseconds, "http handler time");
-    metrics::histogram!("uds.handle").record(now.elapsed().as_micros() as f64);
-
-    Ok(())
 }
 
-async fn purge_db(store: db::Store) -> Result<()> {
+async fn purge_db(store: &db::Store) -> Result<()> {
     store.purge().await;
 
     tracing::info!("db purged");

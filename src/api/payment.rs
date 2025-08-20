@@ -1,12 +1,12 @@
 use anyhow::Result;
 use tokio::{io::AsyncWriteExt, net::UnixStream};
 
-use crate::{WORKER_SOCKET, data, worker::WorkerRequest};
+use crate::{data, worker::WorkerRequest};
 
-pub async fn send(buf: &mut [u8], payment: Request) -> Result<()> {
+pub async fn send(socket: &mut UnixStream, buf: &mut [u8]) -> Result<()> {
+    let payment: Request = serde_json::from_slice(buf)?;
+
     tracing::trace!(payment.correlation_id, "uds_send");
-
-    let mut socket = UnixStream::connect(&*WORKER_SOCKET).await?;
 
     let n = data::encode(WorkerRequest::Payment(payment), buf);
 
