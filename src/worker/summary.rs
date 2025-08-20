@@ -1,38 +1,34 @@
-use std::{
-    io::{Cursor, Write},
-    time::Duration,
-};
+use std::io::{Cursor, Write};
 
 use anyhow::Result;
 use tokio::{io::AsyncWriteExt, net::UnixStream};
 
-use crate::db;
+use crate::{api::summary::Summary, db};
 
 pub async fn process(
-    mut socket: UnixStream,
-    store: db::Store,
+    socket: &mut UnixStream,
+    store: &db::Store,
     query: (i64, i64),
     buf: &mut [u8],
 ) -> Result<()> {
     tracing::trace!("handling get_summary");
 
-    tokio::time::sleep(Duration::from_millis(2)).await;
-
     let summary = store.get(query).await;
 
-    let n = build_payload(buf, summary.default.count, summary.default.amount)?;
+    let n = build_payload(buf, summary)?;
 
     socket.write_all(&buf[..n]).await?;
 
     Ok(())
 }
 
-fn build_payload(buf: &mut [u8], count: u64, amount: f32) -> Result<usize> {
+fn build_payload(buf: &mut [u8], Summary { default, fallback }: Summary) -> Result<usize> {
     let mut writer = Cursor::new(buf);
 
     write!(
         writer,
-        r#"{{"default":{{"totalRequests":{count},"totalAmount":{amount}}},"fallback":{{"totalRequests":0,"totalAmount":0.0}}}}"#,
+        r#"{{"default":{{"totalRequests":{},"totalAmount":{}}},"fallback":{{"totalRequests":{},"totalAmount":{}}}}}"#,
+        default.count, default.amount, fallback.count, fallback.amount
     )?;
 
     Ok(writer.position() as usize)

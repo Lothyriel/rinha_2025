@@ -42,17 +42,19 @@ impl Store {
                 .binary_search_by_key(&to, |p| p.requested_at)
                 .map_or_else(|pos| pos, |pos| pos + 1);
 
-            payments[start..end].iter().fold((0, 0), |mut acc, p| {
-                acc.0 += 1;
-                acc.1 += p.amount;
-                acc
-            })
+            payments[start..end]
+                .iter()
+                .fold([(0, 0), (0, 0)], |mut acc, p| {
+                    acc[p.processor_id as usize].0 += 1;
+                    acc[p.processor_id as usize].1 += p.amount;
+                    acc
+                })
         };
 
         metrics::describe_histogram!("db.select", Unit::Nanoseconds, "db query time");
         metrics::histogram!("db.select").record(now.elapsed().as_nanos() as f64);
 
-        Summary::new([summary, (0, 0)])
+        Summary::new([summary[0], summary[1]])
     }
 
     pub async fn purge(&self) {
