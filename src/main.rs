@@ -24,6 +24,12 @@ fn main() {
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn init_metrics() {
+    let use_metrics = std::env::var("METRICS").is_ok();
+
+    if !use_metrics {
+        return;
+    }
+
     let mut recorder = metrics_printer::PrintRecorder::default();
 
     recorder
