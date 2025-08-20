@@ -28,7 +28,7 @@ fn init_metrics() {
 
     recorder
         .do_print_metadata()
-        .set_print_interval(Duration::from_secs(15))
+        .set_print_interval(Duration::from_secs(30))
         .select_quantiles(Box::new([
             Quantile::new(0.50),
             Quantile::new(0.99),
