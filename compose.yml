@@ -34,6 +34,7 @@ services:
   api0:
     <<: *api
     environment:
+      METRICS: "🎯"
       API_N: "0"
       RUST_LOG: "info"
       WORKER_SOCKET: "/var/run/worker.sock"
@@ -41,6 +42,7 @@ services:
   api1:
     <<: *api
     environment:
+      METRICS: "🎯"
       API_N: "1"
       RUST_LOG: "info"
       WORKER_SOCKET: "/var/run/worker.sock"
@@ -55,6 +57,7 @@ services:
       - uds:/var/run
     environment:
       HTTP_WORKERS: "64"
+      METRICS: "🎯"
       WORKER_SOCKET: "/var/run/worker.sock"
       RUST_LOG: "info"
     deploy:
