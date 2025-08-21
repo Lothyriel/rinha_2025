@@ -1,14 +1,15 @@
 mod pp_client;
 mod summary;
 
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use anyhow::Result;
-use metrics::Unit;
 use reqwest::Client;
-use tokio::{io::AsyncReadExt, net::UnixStream};
+use tokio::net::UnixStream;
 
-use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db, worker::pp_client::PaymentsManager};
+use crate::{
+    api, bind_unix_socket, data, db, get_worker_socket, worker::pp_client::PaymentsManager,
+};
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn serve() -> Result<()> {
@@ -76,9 +77,10 @@ async fn start_http_worker(manager: Arc<PaymentsManager>, tx: Sender, rx: Receiv
 }
 
 async fn uds_listen(tx: Sender, store: db::Store) -> Result<()> {
-    let listener = bind_unix_socket(&WORKER_SOCKET)?;
+    let socket = get_worker_socket();
+    let listener = bind_unix_socket(&socket)?;
 
-    tracing::info!("listening on {}", *WORKER_SOCKET);
+    tracing::info!("listening on {}", &socket);
 
     loop {
         let tx = tx.clone();
@@ -95,33 +97,29 @@ async fn uds_listen(tx: Sender, store: db::Store) -> Result<()> {
     }
 }
 
-async fn handle_uds(tx: Sender, mut socket: UnixStream, store: db::Store) -> Result<()> {
-    let now = Instant::now();
-
-    let mut buf = [0u8; 128];
+async fn handle_uds(tx: Sender, stream: UnixStream, store: db::Store) -> Result<()> {
+    let mut stream = data::FramedStream::new(stream);
 
     loop {
-        let n = socket.read(&mut buf).await?;
+        let n = stream.read().await?;
 
         if n == 0 {
             return Ok(());
         }
 
-        let req = data::decode(&buf[..n]);
-
-        match req {
-            WorkerRequest::Summary(query) => {
-                summary::process(&mut socket, &store, query, &mut buf).await?
+        while let Some(req) = stream.next()? {
+            match req {
+                WorkerRequest::Summary(query) => {
+                    let (socket, buf) = stream.inner();
+                    summary::process(socket, &store, query, buf).await?
+                }
+                WorkerRequest::Payment(req) => {
+                    tracing::trace!("sending to req_channel");
+                    tx.send_async(req).await?;
+                }
+                WorkerRequest::PurgeDb => purge_db(&store).await?,
             }
-            WorkerRequest::Payment(req) => {
-                tracing::trace!("sending to req_channel");
-                tx.send_async(req).await?;
-            }
-            WorkerRequest::PurgeDb => purge_db(&store).await?,
         }
-
-        metrics::describe_histogram!("uds.handle", Unit::Microseconds, "http handler time");
-        metrics::histogram!("uds.handle").record(now.elapsed().as_micros() as f64);
     }
 }
 

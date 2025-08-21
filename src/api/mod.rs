@@ -1,6 +1,5 @@
 pub mod payment;
 pub mod summary;
-mod util;
 
 use std::{io::IoSlice, time::Instant};
 
@@ -11,7 +10,7 @@ use tokio::{
     net::UnixStream,
 };
 
-use crate::{WORKER_SOCKET, bind_unix_socket};
+use crate::{bind_unix_socket, data, get_worker_socket, worker::WorkerRequest};
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn serve() -> Result<()> {
@@ -41,7 +40,8 @@ pub async fn serve() -> Result<()> {
 async fn handle_http(mut client: UnixStream) -> Result<()> {
     let mut buf = [0u8; 512];
 
-    let mut worker = UnixStream::connect(&*WORKER_SOCKET).await?;
+    let socket = get_worker_socket();
+    let mut worker = UnixStream::connect(socket).await?;
 
     loop {
         let n = client.read(&mut buf).await?;
@@ -54,7 +54,7 @@ async fn handle_http(mut client: UnixStream) -> Result<()> {
         match (buf[0], buf[7]) {
             // [G]ET /payments-summary
             (b'G', _) => {
-                let n = summary::get_summary(&mut worker, &mut buf).await?;
+                let (n, buf) = summary::get_summary(&mut worker, &mut buf).await?;
                 let body_len = n.to_string();
 
                 let res = &[
@@ -81,7 +81,7 @@ async fn handle_http(mut client: UnixStream) -> Result<()> {
             }
             // POST /p[u]rge-payments
             (b'P', b'u') => {
-                util::purge(&mut worker, &mut buf).await?;
+                data::send(WorkerRequest::PurgeDb, &mut buf, &mut worker).await?;
                 send_ok(&mut client).await?;
             }
             _ => {

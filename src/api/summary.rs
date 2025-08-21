@@ -1,22 +1,20 @@
 use anyhow::Result;
 use chrono::DateTime;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::UnixStream,
-};
+use tokio::net::UnixStream;
 
 use crate::{data, worker::WorkerRequest};
 
-pub async fn get_summary(socket: &mut UnixStream, buf: &mut [u8]) -> Result<usize> {
+pub async fn get_summary<'a>(
+    socket: &mut UnixStream,
+    buf: &'a mut [u8],
+) -> Result<(usize, &'a mut [u8])> {
     let query = get_query(buf)?;
 
-    let n = data::encode(WorkerRequest::Summary(query), buf);
+    let req = WorkerRequest::Summary(query);
 
-    socket.write_all(&buf[..n]).await?;
+    data::send(req, buf, socket).await?;
 
-    let n = socket.read(buf).await?;
-
-    Ok(n)
+    data::read_bytes(socket, buf).await
 }
 
 fn get_query(buf: &[u8]) -> Result<(i64, i64)> {

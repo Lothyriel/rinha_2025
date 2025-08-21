@@ -1,9 +1,9 @@
 use std::io::{Cursor, Write};
 
 use anyhow::Result;
-use tokio::{io::AsyncWriteExt, net::UnixStream};
+use tokio::net::UnixStream;
 
-use crate::{api::summary::Summary, db};
+use crate::{api::summary::Summary, data, db};
 
 pub async fn process(
     socket: &mut UnixStream,
@@ -17,9 +17,7 @@ pub async fn process(
 
     let n = build_payload(buf, summary)?;
 
-    socket.write_all(&buf[..n]).await?;
-
-    Ok(())
+    data::send_bytes(buf, n, socket).await
 }
 
 fn build_payload(buf: &mut [u8], Summary { default, fallback }: Summary) -> Result<usize> {
