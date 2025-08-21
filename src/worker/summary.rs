@@ -1,23 +1,22 @@
 use std::io::{Cursor, Write};
 
 use anyhow::Result;
-use tokio::net::UnixStream;
+use tokio::{io::AsyncWriteExt, net::UnixStream};
 
-use crate::{api::summary::Summary, data, db};
+use crate::{api::summary::Summary, db};
 
-pub async fn process(
-    socket: &mut UnixStream,
-    store: &db::Store,
-    query: (i64, i64),
-    buf: &mut [u8],
-) -> Result<()> {
+pub async fn process(socket: &mut UnixStream, store: &db::Store, query: (i64, i64)) -> Result<()> {
     tracing::trace!("handling get_summary");
 
     let summary = store.get(query).await;
 
-    let n = build_payload(buf, summary)?;
+    let mut buf = [0u8; 128];
 
-    data::send_bytes(buf, n, socket).await
+    let n = build_payload(&mut buf, summary)?;
+
+    socket.write_all(&buf[..n]).await?;
+
+    Ok(())
 }
 
 fn build_payload(buf: &mut [u8], Summary { default, fallback }: Summary) -> Result<usize> {

@@ -54,7 +54,7 @@ async fn handle_http(mut client: UnixStream) -> Result<()> {
         match (buf[0], buf[7]) {
             // [G]ET /payments-summary
             (b'G', _) => {
-                let (n, buf) = summary::get_summary(&mut worker, &mut buf).await?;
+                let n = summary::get_summary(&mut worker, &mut buf).await?;
                 let body_len = n.to_string();
 
                 let res = &[

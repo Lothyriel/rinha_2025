@@ -110,8 +110,8 @@ async fn handle_uds(tx: Sender, stream: UnixStream, store: db::Store) -> Result<
         while let Some(req) = stream.next()? {
             match req {
                 WorkerRequest::Summary(query) => {
-                    let (socket, buf) = stream.inner();
-                    summary::process(socket, &store, query, buf).await?
+                    let socket = stream.inner();
+                    summary::process(socket, &store, query).await?;
                 }
                 WorkerRequest::Payment(req) => {
                     tracing::trace!("sending to req_channel");

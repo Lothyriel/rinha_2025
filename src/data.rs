@@ -1,19 +1,22 @@
 use anyhow::Result;
-use bincode::config::*;
+use bincode::{
+    config::*,
+    error::{DecodeError, EncodeError},
+};
 use chrono::{DateTime, Utc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 type BincodeConfig = Configuration<LittleEndian, Fixint, NoLimit>;
 const CONFIG: BincodeConfig = bincode::config::standard().with_fixed_int_encoding();
 
-fn encode<S: serde::Serialize>(input: S, buf: &mut [u8]) -> usize {
-    bincode::serde::encode_into_slice(&input, buf, CONFIG).expect("Failed to encode")
+fn encode<S: serde::Serialize>(input: S, buf: &mut [u8]) -> Result<usize, EncodeError> {
+    bincode::serde::encode_into_slice(&input, buf, CONFIG)
 }
 
-fn decode<D: serde::de::DeserializeOwned>(input: &[u8]) -> D {
-    let (o, _) = bincode::serde::borrow_decode_from_slice(input, CONFIG).expect("Failed to decode");
+fn decode<D: serde::de::DeserializeOwned>(input: &[u8]) -> Result<D, DecodeError> {
+    let (o, _) = bincode::serde::borrow_decode_from_slice(input, CONFIG)?;
 
-    o
+    Ok(o)
 }
 const SIZE: usize = std::mem::size_of::<usize>();
 
@@ -22,20 +25,11 @@ pub async fn send<T: serde::Serialize, S: AsyncWriteExt + Unpin>(
     buf: &mut [u8],
     stream: &mut S,
 ) -> Result<()> {
-    let n = encode(payload, buf);
+    let n = encode(payload, &mut buf[SIZE..])?;
 
-    send_bytes(buf, n, stream).await
-}
+    buf[..SIZE].copy_from_slice(&n.to_be_bytes());
 
-pub async fn send_bytes<S: AsyncWriteExt + Unpin>(
-    payload: &mut [u8],
-    n: usize,
-    stream: &mut S,
-) -> Result<()> {
-    payload.copy_within(..n, SIZE);
-    payload[..SIZE].copy_from_slice(&n.to_be_bytes());
-
-    stream.write_all(&payload[..n + SIZE]).await?;
+    stream.write_all(&buf[..n + SIZE]).await?;
 
     Ok(())
 }
@@ -80,31 +74,17 @@ impl<S: AsyncReadExt + Unpin> FramedStream<S> {
             return Ok(None);
         }
 
-        let payload = decode(&self.buf[self.offset + SIZE..self.offset + SIZE + payload_size]);
+        let payload_offset = self.offset + SIZE;
+        let payload = decode(&self.buf[payload_offset..payload_offset + payload_size])?;
 
-        self.offset += payload_size + SIZE;
+        self.offset = payload_offset + payload_size;
 
         Ok(Some(payload))
     }
 
-    pub fn inner(&mut self) -> (&mut S, &mut [u8]) {
-        (&mut self.stream, &mut self.buf)
+    pub fn inner(&mut self) -> &mut S {
+        &mut self.stream
     }
-}
-
-pub async fn read_bytes<'a, S: AsyncReadExt + Unpin>(
-    stream: &mut S,
-    buf: &'a mut [u8],
-) -> Result<(usize, &'a mut [u8])> {
-    let read = stream.read(buf).await?;
-
-    if read == 0 {
-        return Ok((0, buf));
-    }
-
-    let payload_size = usize::from_be_bytes(buf[..SIZE].try_into()?);
-
-    Ok((payload_size, &mut buf[SIZE..payload_size + SIZE]))
 }
 
 pub struct Payment {
