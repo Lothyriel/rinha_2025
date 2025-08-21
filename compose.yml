@@ -56,8 +56,8 @@ services:
     volumes:
       - uds:/var/run
     environment:
-      HTTP_WORKERS: "64"
       METRICS: "🎯"
+      HTTP_WORKERS: "12"
       WORKER_SOCKET: "/var/run/worker.sock"
       RUST_LOG: "info"
     deploy:
