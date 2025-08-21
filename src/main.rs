@@ -8,7 +8,6 @@ use std::{fs::Permissions, os::unix::fs::PermissionsExt, time::Duration};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use metrics_util::Quantile;
-use once_cell::sync::Lazy;
 use tokio::net::UnixListener;
 use tracing_subscriber::{EnvFilter, fmt::layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -74,15 +73,16 @@ fn serve(args: Args) {
     }
 }
 
+fn get_worker_socket() -> String {
+    std::env::var("WORKER_SOCKET").unwrap_or("./worker.sock".to_string())
+}
+
 #[derive(Parser)]
 #[command(about = "Rinha 2025")]
 struct Args {
     #[arg(short = 'm', value_parser = ["api", "worker"], help = "The mode in which the binary will run")]
     mode: String,
 }
-
-static WORKER_SOCKET: Lazy<String> =
-    Lazy::new(|| std::env::var("WORKER_SOCKET").unwrap_or("./worker.sock".to_string()));
 
 fn bind_unix_socket(file: &str) -> Result<UnixListener> {
     std::fs::remove_file(file).ok();

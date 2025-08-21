@@ -26,8 +26,6 @@ bincode = { version = "2.0.1", features = ["serde"] }
 
 tokio = { version = "1.47.1", features = ["macros", "io-util"] }
 
-once_cell = "1.21.3"
-
 dotenvy = "0.15.7"
 
 tracing = "0.1.41"

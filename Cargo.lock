@@ -1120,7 +1120,6 @@ dependencies = [
  "metrics-util",
  "metrics_printer",
  "mimalloc",
- "once_cell",
  "reqwest",
  "serde",
  "serde_json",
