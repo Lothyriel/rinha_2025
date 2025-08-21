@@ -1,7 +1,7 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -21,14 +21,14 @@ pub struct PaymentsManager {
     default: PaymentProcesorClient,
     fallback: PaymentProcesorClient,
     store: db::Store,
-    micros_cutout: u32,
+    micros_cutout: u64,
 }
 
 impl PaymentsManager {
     pub fn new(
         default: &str,
         fallback: &str,
-        micros_cutout: u32,
+        micros_cutout: u64,
         store: db::Store,
         client: &Client,
     ) -> Arc<Self> {
@@ -84,16 +84,41 @@ struct PaymentProcesorClient {
     id: u8,
     client: Client,
     payments_url: String,
-    latency: AtomicU32,
+    latency: AtomicU64,
+    start: Instant,
 }
 
 impl PaymentProcesorClient {
     fn new(id: u8, host: &str, client: Client) -> Self {
         Self {
             payments_url: format!("{host}/payments"),
-            latency: AtomicU32::new(0),
+            latency: AtomicU64::new(0),
             client,
             id,
+            start: Instant::now(),
+        }
+    }
+
+    fn store_metrics(&self, latency: u64) {
+        const ORD: Ordering = Ordering::Relaxed;
+
+        let new_age = self.start.elapsed().as_millis() as u64;
+
+        loop {
+            let current = self.latency.load(ORD);
+            let age = current >> 32;
+
+            if new_age <= age {
+                return;
+            }
+
+            let new = (new_age << 32) | latency;
+
+            let result = self.latency.compare_exchange(current, new, ORD, ORD);
+
+            if result.is_ok() {
+                return;
+            }
         }
     }
 
@@ -117,7 +142,7 @@ impl PaymentProcesorClient {
             Err(_) => u128::MAX,
         };
 
-        self.latency.store(latency as u32, Ordering::Relaxed);
+        self.store_metrics(latency as u64);
 
         metrics::describe_histogram!("pp_http", Unit::Microseconds, "payment processor http time");
         metrics::histogram!("pp_http").record(elapsed as f64);
