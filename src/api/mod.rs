@@ -13,6 +13,7 @@ use tokio::{
 
 use crate::{WORKER_SOCKET, bind_unix_socket};
 
+#[tokio::main(flavor = "current_thread")]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting API");
 

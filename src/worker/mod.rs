@@ -10,6 +10,7 @@ use tokio::{io::AsyncReadExt, net::UnixStream};
 
 use crate::{WORKER_SOCKET, api, bind_unix_socket, data, db, worker::pp_client::PaymentsManager};
 
+#[tokio::main(flavor = "current_thread")]
 pub async fn serve() -> Result<()> {
     tracing::info!("starting worker");
 

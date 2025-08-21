@@ -62,11 +62,10 @@ fn init_tracing() {
     tracing_subscriber::registry().with(filter).with(fmt).init();
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn serve(args: Args) {
+fn serve(args: Args) {
     let result = match args.mode.as_str() {
-        "api" => api::serve().await,
-        "worker" => worker::serve().await,
+        "api" => api::serve(),
+        "worker" => worker::serve(),
         _ => Err(anyhow!("Invalid mode {:?}", args.mode)),
     };
 
